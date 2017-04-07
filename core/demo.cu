@@ -61,10 +61,22 @@ void ComputeTDF(int CUDA_LOOP_IDX, float * voxel_grid_occ, float * voxel_grid_TD
 // 2. Generates a TDF voxel volume for the point cloud
 // 3. Finds random surface keypoints
 // 4. Compute 3DMatch descriptor vectors for all keypoints using Marvin
-int main(int argc, char * argv[]) {
+int main(int argc, char *argv[]) {
 
+  // Check if the command line arguments are correct
+  if (argc != 5) {
+    std::cout << "Usage: Generate keypoints and 3DMatch descriptors from a point cloud" << std::endl;
+    std::cout << "input_pointcloud: Input file containing the pointcloud in ply format to be processed" << std::endl;
+    std::cout << "output_prefix: Output prefix of the files used to store the computed descriptors and keypoints" << std::endl;
+    std::cout << "keypoints: Total number of keypoints to be sampled from the provided pointcloud" << std::endl;
+    std::cout << "voxel_size: Voxel size of the local 3D path (for KITTI ~0.000001)" << std::endl;
+    return(1);
+  }
+ 
   std::string pointcloud_filename(argv[1]);
   std::string out_prefix_filename(argv[2]);
+  int num_keypts = atoi(argv[3]);
+  float voxel_size = std::stof(argv[4]);
 
   // Super hacky code to read a point cloud file (replace this...)
   std::ifstream pointcloud_file(pointcloud_filename.c_str());
@@ -88,13 +100,14 @@ int main(int argc, char * argv[]) {
     std::cerr << "Third line of .ply file does not tell me number of points. Double check format of point cloud file (or change .ply file reader code)." << std::endl;
     return 0;
   }
+
   float * pts = new float[num_pts * 3]; // Nx3 matrix saved as float array (row-major order)
   pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
   pointcloud_file.close();
 
   std::cout << "Loaded point cloud with " << num_pts << " points!" << std::endl;
 
-  float voxel_size = 0.01;
+  //float voxel_size = 0.01;
   float trunc_margin = voxel_size * 5;
   int voxel_grid_padding = 15; // in voxels
 
@@ -120,7 +133,7 @@ int main(int argc, char * argv[]) {
   voxel_grid_origin_x = voxel_grid_origin_x - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_y = voxel_grid_origin_y - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_z = voxel_grid_origin_z - voxel_grid_padding * voxel_size + voxel_size / 2;
-
+  
   std::cout << "Size of TDF voxel grid: " << voxel_grid_dim_x << " x " << voxel_grid_dim_y << " x " << voxel_grid_dim_z << std::endl;
   std::cout << "Computing TDF voxel grid..." << std::endl;
 
@@ -163,7 +176,7 @@ int main(int argc, char * argv[]) {
 
   // Compute random surface keypoints in point cloud coordinates and voxel grid coordinates
   std::cout << "Finding random surface keypoints..." << std::endl;
-  int num_keypts = 50 * 10;
+  // int num_keypts = 50 * 10;
   float * keypts = new float[num_keypts * 3];
   float * keypts_grid = new float[num_keypts * 3];
   for (int keypt_idx = 0; keypt_idx < num_keypts; ++keypt_idx) {
@@ -209,7 +222,8 @@ int main(int argc, char * argv[]) {
       for (int z = keypt_grid_z - 15; z < keypt_grid_z + 15; ++z)
         for (int y = keypt_grid_y - 15; y < keypt_grid_y + 15; ++y)
           for (int x = keypt_grid_x - 15; x < keypt_grid_x + 15; ++x) {
-            local_voxel_grid_TDF[local_voxel_idx] = CPUCompute2StorageT(voxel_grid_TDF[z * voxel_grid_dim_x * voxel_grid_dim_y + y * voxel_grid_dim_x + x]);
+            local_voxel_grid_TDF[local_voxel_idx] = 
+                CPUCompute2StorageT(voxel_grid_TDF[z * voxel_grid_dim_x * voxel_grid_dim_y + y * voxel_grid_dim_x + x]);
             local_voxel_idx++;
           }
       for (int voxel_idx = 0; voxel_idx < 30 * 30 * 30; ++voxel_idx)
@@ -238,7 +252,9 @@ int main(int argc, char * argv[]) {
   std::string keypts_saveto_path = out_prefix_filename + ".keypts.bin";
   std::ofstream keypts_out_file(keypts_saveto_path, std::ios::binary | std::ios::out);
   float num_keyptsf = (float) num_keypts;
-  keypts_out_file.write((char*)&num_keyptsf, sizeof(float));
+  // The first line of the keypoint files contains the total number of
+  // keypoints sampled from the input surface
+  keypts_out_file.write((char*)&num_keyptsf, sizeof(float)); 
   for (int keypt_val_idx = 0; keypt_val_idx < num_keypts * 3; ++keypt_val_idx)
     keypts_out_file.write((char*)&keypts[keypt_val_idx], sizeof(float));
   keypts_out_file.close();
@@ -248,7 +264,10 @@ int main(int argc, char * argv[]) {
   std::string desc_saveto_path = out_prefix_filename + ".desc.3dmatch.bin";
   std::ofstream desc_out_file(desc_saveto_path, std::ios::binary | std::ios::out);
   float desc_sizef = (float) desc_size;
+  // The first line of the 3DMatch descriptor file contains the total number of
+  // keypoints sampled from the input surface
   desc_out_file.write((char*)&num_keyptsf, sizeof(float));
+  // The second line contains the descriptor size
   desc_out_file.write((char*)&desc_sizef, sizeof(float));
   for (int desc_val_idx = 0; desc_val_idx < num_keypts * desc_size; ++desc_val_idx)
     desc_out_file.write((char*)&desc_3dmatch[desc_val_idx], sizeof(float));
