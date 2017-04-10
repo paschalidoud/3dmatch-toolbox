@@ -1,4 +1,4 @@
-#!/usr/env python
+#!/usr/bin/env python
 """ Script to convert data from the KITI dataset to the corresponding ply
 format
 """
