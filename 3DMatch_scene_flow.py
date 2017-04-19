@@ -13,21 +13,21 @@ from sklearn.neighbors import KDTree
 def compute_correspondences(D1, D2, tree_leaf_size=40):
     # Organize the indices of the first input in a tree
     tree = KDTree(
-        D1,
+        D2,
         metric="euclidean",
         leaf_size=tree_leaf_size
     )
 
-    indices = {}
+    indices = []
 
     # For all the descriptors from the initial frame compute their
     # corresponding descriptors from the second frame. By corresponding, we
     # mean the descriptor that is closer based on the euclidean distance
-    for i in range(len(D2)):
+    for i in range(len(D1)):
         # print i, D2[i]
         # Compute the distances and indices of the 1th nearest neighbors
-        dist, ind = tree.query(D2[i].reshape(1, -1), k=1)
-        indices[i] = ind[0][0]
+        dist, ind = tree.query(D1[i].reshape(1, -1), k=1)
+        indices.append(ind[0][0])
 
     return indices
 
@@ -89,12 +89,8 @@ if __name__ == "__main__":
         exit(2)
 
     scene_indices = compute_correspondences(D1, D2, args.leaf_size)
-    C = []
-    for key, value in scene_indices.iteritems():
-        C.append(np.hstack((K1[value], K2[key])))
-        # print key, value, K1[key], K2[value]
+    C = np.hstack([K1, K2[scene_indices]])
+        
+    with open(args.output_file, "wb") as out:
+        C.astype(np.float32).tofile(out)
 
-    with open(args.output_file, "wb") as out: 
-        np.array(C).astype(np.float32).tofile(out)
-
-    print np.array(C).shape
