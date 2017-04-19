@@ -192,13 +192,20 @@ int main(int argc, char *argv[]) {
   float * keypts = new float[num_keypts * 3];
   float * keypts_grid = new float[num_keypts * 3];
   for (int keypt_idx = 0; keypt_idx < num_keypts; ++keypt_idx) {
-    int rand_idx = (int)(GetRandomFloat(0.0f, (float)num_pts));
-    keypts[keypt_idx * 3 + 0] = pts[rand_idx * 3 + 0];
-    keypts[keypt_idx * 3 + 1] = pts[rand_idx * 3 + 1];
-    keypts[keypt_idx * 3 + 2] = pts[rand_idx * 3 + 2];
-    keypts_grid[keypt_idx * 3 + 0] = round((pts[rand_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
-    keypts_grid[keypt_idx * 3 + 1] = round((pts[rand_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
-    keypts_grid[keypt_idx * 3 + 2] = round((pts[rand_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
+    // int rand_idx = (int)(GetRandomFloat(0.0f, (float)num_pts));
+    // keypts[keypt_idx * 3 + 0] = pts[rand_idx * 3 + 0];
+    // keypts[keypt_idx * 3 + 1] = pts[rand_idx * 3 + 1];
+    // keypts[keypt_idx * 3 + 2] = pts[rand_idx * 3 + 2];
+    // keypts_grid[keypt_idx * 3 + 0] = round((pts[rand_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
+    // keypts_grid[keypt_idx * 3 + 1] = round((pts[rand_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
+    // keypts_grid[keypt_idx * 3 + 2] = round((pts[rand_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
+
+    keypts[keypt_idx * 3 + 0] = pts[keypt_idx * 3 + 0];
+    keypts[keypt_idx * 3 + 1] = pts[keypt_idx * 3 + 1];
+    keypts[keypt_idx * 3 + 2] = pts[keypt_idx * 3 + 2];
+    keypts_grid[keypt_idx * 3 + 0] = round((pts[keypt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
+    keypts_grid[keypt_idx * 3 + 1] = round((pts[keypt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
+    keypts_grid[keypt_idx * 3 + 2] = round((pts[keypt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
 
     //std::cout << "keypts_x: " << keypts[keypt_idx*3 + 0] << " keypts_y: " << keypts[keypt_idx*3 + 1]
     //          << " keypts_z: " << keypts[keypt_idx*3 + 2] << " keypts_gridx: " << keypts_grid[keypt_idx*3 + 0]
@@ -270,7 +277,7 @@ int main(int argc, char *argv[]) {
   float num_keyptsf = (float) num_keypts;
   // The first line of the keypoint files contains the total number of
   // keypoints sampled from the input surface
-  keypts_out_file.write((char*)&num_keyptsf, sizeof(float)); 
+  // keypts_out_file.write((char*)&num_keyptsf, sizeof(float)); 
   for (int keypt_val_idx = 0; keypt_val_idx < num_keypts * 3; ++keypt_val_idx)
     keypts_out_file.write((char*)&keypts[keypt_val_idx], sizeof(float));
   keypts_out_file.close();
@@ -282,9 +289,9 @@ int main(int argc, char *argv[]) {
   float desc_sizef = (float) desc_size;
   // The first line of the 3DMatch descriptor file contains the total number of
   // keypoints sampled from the input surface
-  desc_out_file.write((char*)&num_keyptsf, sizeof(float));
+  // desc_out_file.write((char*)&num_keyptsf, sizeof(float));
   // The second line contains the descriptor size
-  desc_out_file.write((char*)&desc_sizef, sizeof(float));
+  // desc_out_file.write((char*)&desc_sizef, sizeof(float));
   for (int desc_val_idx = 0; desc_val_idx < num_keypts * desc_size; ++desc_val_idx)
     desc_out_file.write((char*)&desc_3dmatch[desc_val_idx], sizeof(float));
   desc_out_file.close();

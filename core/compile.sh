@@ -15,4 +15,4 @@ CUDNN_INC_DIR=/is/software/nvidia/cudnn-5.1/include
 # if use opencv, add this into the command line
 # `pkg-config --cflags --libs opencv`
 
-nvcc -std=c++11 -O3 -o demo demo.cu -I/is/software/nvidia/cuda-8.0/include -I$CUDNN_INC_DIR -L$CUDA_LIB_DIR -L$CUDNN_LIB_DIR -lcudart -lcublas -lcudnn -lcurand -D_MWAITXINTRIN_H_INCLUDED `pkg-config --cflags --libs opencv`
+nvcc -std=c++11 -O3 -o demo demo.cu -I/is/software/nvidia/cuda-8.0/include -I$CUDNN_INC_DIR -L$CUDA_LIB_DIR -L$CUDNN_LIB_DIR -lcudart -lcublas -lcudnn -lcurand -D_MWAITXINTRIN_H_INCLUDED -I~/.local/inlude -L~/.local/lib -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_ml -lopencv_video -lopencv_features2d -lopencv_calib3d -lopencv_objdetect -lopencv_flann -lopencv_imgcodecs
