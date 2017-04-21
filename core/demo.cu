@@ -68,15 +68,17 @@ int main(int argc, char *argv[]) {
     std::cout << "Usage: Generate keypoints and 3DMatch descriptors from a point cloud" << std::endl;
     std::cout << "input_pointcloud: Input file containing the pointcloud in ply format to be processed" << std::endl;
     std::cout << "output_prefix: Output prefix of the files used to store the computed descriptors and keypoints" << std::endl;
-    std::cout << "keypoints: Total number of keypoints to be sampled from the provided pointcloud" << std::endl;
-    std::cout << "voxel_size: Voxel size of the local 3D path (for KITTI ~0.000001)" << std::endl;
+    //std::cout << "keypoints: Total number of keypoints to be sampled from the provided pointcloud" << std::endl;
+    std::cout << "voxel_size: Voxel size of the local 3D path " << std::endl;
+    std::cout << "voxel_grid_padding: Voxel grid padding" << std::endl;
     return(1);
   }
 
   std::string pointcloud_filename(argv[1]);
   std::string out_prefix_filename(argv[2]);
-  int num_keypts = atoi(argv[3]);
-  float voxel_size = std::stof(argv[4]);
+  //int num_keypts = atoi(argv[3]);
+  float voxel_size = std::stof(argv[3]);
+  int voxel_grid_padding = atoi(argv[4]);
 
   // Super hacky code to read a point cloud file (replace this...)
   std::ifstream pointcloud_file(pointcloud_filename.c_str());
@@ -100,7 +102,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "Third line of .ply file does not tell me number of points. Double check format of point cloud file (or change .ply file reader code)." << std::endl;
     return 0;
   }
-
+  
   float * pts = new float[num_pts * 3]; // Nx3 matrix saved as float array (row-major order)
   // This is to read ply files that are in ascii format
   float ptx, pty, ptz;
@@ -121,7 +123,8 @@ int main(int argc, char *argv[]) {
 
   //float voxel_size = 0.01;
   float trunc_margin = voxel_size * 5;
-  int voxel_grid_padding = 15; // in voxels
+  // int voxel_grid_padding = 25; // in voxels
+  int num_keypts = num_pts;
 
   // Compute point cloud coordinates of the origin voxel (0,0,0) of the voxel grid
   float voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z;
@@ -141,7 +144,7 @@ int main(int argc, char *argv[]) {
   int voxel_grid_dim_x = round((voxel_grid_max_x - voxel_grid_origin_x) / voxel_size) + 1 + voxel_grid_padding * 2;
   int voxel_grid_dim_y = round((voxel_grid_max_y - voxel_grid_origin_y) / voxel_size) + 1 + voxel_grid_padding * 2;
   int voxel_grid_dim_z = round((voxel_grid_max_z - voxel_grid_origin_z) / voxel_size) + 1 + voxel_grid_padding * 2;
-
+  
   voxel_grid_origin_x = voxel_grid_origin_x - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_y = voxel_grid_origin_y - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_z = voxel_grid_origin_z - voxel_grid_padding * voxel_size + voxel_size / 2;
@@ -192,24 +195,12 @@ int main(int argc, char *argv[]) {
   float * keypts = new float[num_keypts * 3];
   float * keypts_grid = new float[num_keypts * 3];
   for (int keypt_idx = 0; keypt_idx < num_keypts; ++keypt_idx) {
-    // int rand_idx = (int)(GetRandomFloat(0.0f, (float)num_pts));
-    // keypts[keypt_idx * 3 + 0] = pts[rand_idx * 3 + 0];
-    // keypts[keypt_idx * 3 + 1] = pts[rand_idx * 3 + 1];
-    // keypts[keypt_idx * 3 + 2] = pts[rand_idx * 3 + 2];
-    // keypts_grid[keypt_idx * 3 + 0] = round((pts[rand_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
-    // keypts_grid[keypt_idx * 3 + 1] = round((pts[rand_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
-    // keypts_grid[keypt_idx * 3 + 2] = round((pts[rand_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
-
     keypts[keypt_idx * 3 + 0] = pts[keypt_idx * 3 + 0];
     keypts[keypt_idx * 3 + 1] = pts[keypt_idx * 3 + 1];
     keypts[keypt_idx * 3 + 2] = pts[keypt_idx * 3 + 2];
     keypts_grid[keypt_idx * 3 + 0] = round((pts[keypt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
     keypts_grid[keypt_idx * 3 + 1] = round((pts[keypt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
     keypts_grid[keypt_idx * 3 + 2] = round((pts[keypt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
-
-    //std::cout << "keypts_x: " << keypts[keypt_idx*3 + 0] << " keypts_y: " << keypts[keypt_idx*3 + 1]
-    //          << " keypts_z: " << keypts[keypt_idx*3 + 2] << " keypts_gridx: " << keypts_grid[keypt_idx*3 + 0]
-    //          << " keypts_gridy: " << keypts_grid[keypt_idx*3 + 1] << " keypts_gridz: " << keypts_grid[keypt_idx*3 + 2] << std::endl;
   }
 
   // Start Marvin network

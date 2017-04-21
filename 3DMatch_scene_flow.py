@@ -26,7 +26,8 @@ def compute_correspondences(D1, D2, tree_leaf_size=40):
     for i in range(len(D1)):
         # print i, D2[i]
         # Compute the distances and indices of the 1th nearest neighbors
-        dist, ind = tree.query(D1[i].reshape(1, -1), k=1)
+        dist, ind = tree.query(D1[i].reshape(1, -1), k=5)
+        print i, dist, ind
         indices.append(ind[0][0])
 
     return indices
