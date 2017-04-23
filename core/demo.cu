@@ -18,6 +18,10 @@
 #define CUDA_NUM_THREADS 512
 #define CUDA_MAX_NUM_BLOCKS 2880
 
+#define IS_PLY_BINARY false
+//#define min(a, b) ((a) < (b) ? (a) : (b))
+//#define max(a, b) ((a) > (b) ? (a) : (b))
+
 // CUDA kernel function to compute TDF voxel grid values given a point cloud (warning: approximate, but fast)
 __global__
 void ComputeTDF(int CUDA_LOOP_IDX, float * voxel_grid_occ, float * voxel_grid_TDF,
@@ -104,16 +108,21 @@ int main(int argc, char *argv[]) {
   }
   
   float * pts = new float[num_pts * 3]; // Nx3 matrix saved as float array (row-major order)
-  // This is to read ply files that are in ascii format
-  float ptx, pty, ptz;
-  int i = 0;
-  while (pointcloud_file >> ptx >> pty >> ptz) {
-    pts[i + 0] = ptx;
-    pts[i + 1] = pty;
-    pts[i + 2] = ptz;
-    // std::cout << "x: " << ptx << " y: " << pty << " z: " << ptz << std::endl;
-    // std::cout << "x_: " << pts[i] << " y_: " << pts[i+1] << " z_: " << pts[i+2] << std::endl;
-    i += 3;
+  if (IS_PLY_BINARY) {
+    std::cout << "Reading point cloud in binary format..." << std::endl;
+    pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
+  }
+  else {
+    std::cout << "Reading point cloud in ascii format..." << std::endl;
+    // This is to read ply files that are in ascii format
+    float ptx, pty, ptz;
+    int i = 0;
+    while (pointcloud_file >> ptx >> pty >> ptz) {
+      pts[i + 0] = ptx;
+      pts[i + 1] = pty;
+      pts[i + 2] = ptz;
+      i += 3;
+    }
   }
   // This is to read ply files that are in binary format
   //pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
@@ -121,7 +130,6 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Loaded point cloud with " << num_pts << " points!" << std::endl;
 
-  //float voxel_size = 0.01;
   float trunc_margin = voxel_size * 5;
   // int voxel_grid_padding = 25; // in voxels
   int num_keypts = num_pts;
@@ -141,24 +149,33 @@ int main(int argc, char *argv[]) {
     voxel_grid_max_z = max(voxel_grid_max_z, pts[pt_idx * 3 + 2]);
   }
 
+  // Create a occupancy grid according to the maximum and minimum values of the point cloud
   int voxel_grid_dim_x = round((voxel_grid_max_x - voxel_grid_origin_x) / voxel_size) + 1 + voxel_grid_padding * 2;
   int voxel_grid_dim_y = round((voxel_grid_max_y - voxel_grid_origin_y) / voxel_size) + 1 + voxel_grid_padding * 2;
   int voxel_grid_dim_z = round((voxel_grid_max_z - voxel_grid_origin_z) / voxel_size) + 1 + voxel_grid_padding * 2;
   
+  // Compute the minimum value (m) in each dimension after adding the voxel_grid_padding 
   voxel_grid_origin_x = voxel_grid_origin_x - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_y = voxel_grid_origin_y - voxel_grid_padding * voxel_size + voxel_size / 2;
   voxel_grid_origin_z = voxel_grid_origin_z - voxel_grid_padding * voxel_size + voxel_size / 2;
+
+  std::cout << "voxel_grid_origin_x: " << voxel_grid_origin_x << std::endl;
+  std::cout << "voxel_grid_origin_y: " << voxel_grid_origin_y << std::endl;
+  std::cout << "voxel_grid_origin_z: " << voxel_grid_origin_z << std::endl;
 
   std::cout << "Size of TDF voxel grid: " << voxel_grid_dim_x << " x " << voxel_grid_dim_y << " x " << voxel_grid_dim_z << std::endl;
   std::cout << "Computing TDF voxel grid..." << std::endl;
 
   // Compute surface occupancy grid
   float * voxel_grid_occ = new float[voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z];
+  // Initialize occupancy grid with 0s
   memset(voxel_grid_occ, 0, sizeof(float) * voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z);
   for (int pt_idx = 0; pt_idx < num_pts; ++pt_idx) {
+    // Transform each point from meter to "voxel coordinates"
     int pt_grid_x = round((pts[pt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
     int pt_grid_y = round((pts[pt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
     int pt_grid_z = round((pts[pt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
+    // For each point in the point cloud assign it to a voxel in the occupancy grid and set this voxel to be equal to one 
     voxel_grid_occ[pt_grid_z * voxel_grid_dim_y * voxel_grid_dim_x + pt_grid_y * voxel_grid_dim_x + pt_grid_x] = 1.0f;
   }
 
@@ -188,6 +205,12 @@ int main(int argc, char *argv[]) {
   // Load TDF voxel grid from GPU to CPU memory
   cudaMemcpy(voxel_grid_TDF, gpu_voxel_grid_TDF, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float), cudaMemcpyDeviceToHost);
   marvin::checkCUDA(__LINE__, cudaGetLastError());
+
+  //for (int i = 0; i < voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z; i++) {
+  //  if (voxel_grid_TDF[i] != 0) {
+  //      std::cout << "voxel_grid_TDF[" << i << "]: " << voxel_grid_TDF[i] << std::endl;
+  //  }
+  //}
 
   // Compute random surface keypoints in point cloud coordinates and voxel grid coordinates
   std::cout << "Finding random surface keypoints..." << std::endl;
@@ -219,8 +242,13 @@ int main(int argc, char *argv[]) {
   StorageT * batch_TDF = new StorageT[batch_size * 30 * 30 * 30];
   float * desc_3dmatch = new float[num_keypts * desc_size];
   std::cout << "Computing 3DMatch descriptors for " << num_keypts << " keypoints..." << std::endl;
-  for (int batch_idx = 0; batch_idx < (num_keypts / batch_size); ++batch_idx) {
-    for (int keypt_idx = batch_idx * batch_size; keypt_idx < (batch_idx + 1) * batch_size; ++keypt_idx) {
+  int num_batches = (num_keypts % batch_size == 0) ? num_keypts / batch_size : num_keypts / batch_size + 1;
+  for (int batch_idx = 0; batch_idx < num_batches; ++batch_idx) {
+
+    // Copy the tdf values to the batch tdf array to feed it to the NN
+    int start = batch_idx * batch_size;
+    int end = min(num_keypts, start + batch_size);
+    for (int keypt_idx = start; keypt_idx < end; ++keypt_idx) {
 
       int batch_keypt_idx = keypt_idx - batch_idx * batch_size;
       float keypt_grid_x = keypts_grid[keypt_idx * 3 + 0];
@@ -255,10 +283,15 @@ int main(int argc, char *argv[]) {
     cudaMemcpy(desc_vecs, rFeat->dataGPU, rFeat->numBytes(), cudaMemcpyDeviceToHost);
     marvin::checkCUDA(__LINE__, cudaGetLastError());
 
-    for (int desc_val_idx = 0; desc_val_idx < batch_size * desc_size; ++desc_val_idx)
+    for (int desc_val_idx = 0; desc_val_idx < (end-start) * desc_size; ++desc_val_idx)
       desc_3dmatch[batch_idx * batch_size * desc_size + desc_val_idx] = CPUStorage2ComputeT(desc_vecs[desc_val_idx]);
 
     delete [] desc_vecs;
+
+    // Print information regarding the progress
+    if (batch_idx % 10 == 9) {
+        std::cout << "Computed batch " << (batch_idx + 1) << std::endl;
+    }
   }
 
   // Save keypoints as binary file (Nx3 float array, row-major order)
