@@ -10,7 +10,7 @@ import numpy as np
 from sklearn.neighbors import KDTree
 
 
-def compute_correspondences(D1, D2, tree_leaf_size=40):
+def compute_correspondences(D1, D2, threshold, tree_leaf_size=40):
     # Organize the indices of the first input in a tree
     tree = KDTree(
         D2,
@@ -19,6 +19,7 @@ def compute_correspondences(D1, D2, tree_leaf_size=40):
     )
 
     indices = []
+    seen = set()
 
     # For all the descriptors from the initial frame compute their
     # corresponding descriptors from the second frame. By corresponding, we
@@ -26,11 +27,33 @@ def compute_correspondences(D1, D2, tree_leaf_size=40):
     for i in range(len(D1)):
         # print i, D2[i]
         # Compute the distances and indices of the 1th nearest neighbors
-        dist, ind = tree.query(D1[i].reshape(1, -1), k=5)
-        print i, dist, ind
-        indices.append(ind[0][0])
+        dist, ind = tree.query(D1[i].reshape(1, -1), k=1)
+        #print i, dist, ind
+        if ind[0][0] in seen or dist[0][0] > threshold:
+            indices.append(-1)
+        else:
+            indices.append(ind[0][0])
+            seen.add(ind[0][0])
+        if i % 1000 == 999:
+            print "Projected ", i+1
 
-    return indices
+    return np.array(indices)
+
+
+def compute_projected(K1, K2, scene_indices, kn):
+    with_correspondence = np.arange(len(K1))[scene_indices >= 0]
+    tree = KDTree(K1[with_correspondence], metric="euclidean")
+    projected = np.zeros_like(K1)
+    for i, idx in enumerate(scene_indices):
+        if idx >= 0:
+            projected[i] = K2[idx]
+            continue
+        neighbors = tree.query(K1[i:i+1], k=kn, return_distance=False)[0]
+        neighbor_idxs = with_correspondence[neighbors]
+        deltas = K2[scene_indices[neighbor_idxs]] - K1[neighbor_idxs]
+        projected[i] = K1[i] + deltas.mean(axis=0)
+
+    return projected
 
 
 if __name__ == "__main__":
@@ -63,6 +86,16 @@ if __name__ == "__main__":
         "output_file",
         help="The path to the file to save the scene flow"
     )
+    parser.add_argument(
+        "threshold",
+        type=float,
+        help="The distance threshold to determine the correspondences"
+    )
+    parser.add_argument(
+        "k_neighbors",
+        type=int,
+        help="The distance threshold to determine the correspondences"
+    )
 
     parser.add_argument(
         "--leaf_size",
@@ -80,18 +113,21 @@ if __name__ == "__main__":
     # Load the descriptors for the reference and the next frame
     D1 = np.fromfile(args.descriptor_reference_frame, dtype=np.float32).reshape(-1, 512)
     D2 = np.fromfile(args.descriptor_next_frame, dtype=np.float32).reshape(-1, 512)
-    print np.sum(np.isnan(D1)), np.sum(np.isnan(D2))
 
     if np.sum(np.isnan(D1)) > 0.0:
         print "3DMatch descriptors of first frame contains %d NaN" % np.sum(np.isnan(D1))
         exit(1)
-    if np.sum(np.isnan(D2)) > 0:
+    if np.sum(np.isnan(D2)) > 0.0:
         print "3DMatch descriptors of next frame contains %d NaN" % np.sum(np.isnan(D2))
         exit(2)
 
-    scene_indices = compute_correspondences(D1, D2, args.leaf_size)
-    C = np.hstack([K1, K2[scene_indices]])
-        
+    scene_indices = compute_correspondences(D1, D2, args.threshold, args.leaf_size)
+    print "Keypoints without correspondence %d/%d" % (
+        (scene_indices < 0).sum(),
+        len(scene_indices)
+    )
+    C = np.hstack([K1, compute_projected(K1, K2, scene_indices, args.k_neighbors)])
+
     with open(args.output_file, "wb") as out:
         C.astype(np.float32).tofile(out)
 
