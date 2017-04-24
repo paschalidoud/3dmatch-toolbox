@@ -3,13 +3,154 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include "marvin.hpp"
 
 #define CUDA_NUM_THREADS 512
 #define CUDA_MAX_NUM_BLOCKS 2880
 
 #define IS_PLY_BINARY false
-//#define min(a, b) ((a) < (b) ? (a) : (b))
-//#define max(a, b) ((a) > (b) ? (a) : (b))
+
+// CUDA kernel function to compute TDF voxel grid values given a point cloud (warning: approximate, but fast)
+__global__
+void ComputeTDF(int CUDA_LOOP_IDX, float * voxel_grid_occ, float * voxel_grid_TDF,
+                int voxel_grid_dim_x, int voxel_grid_dim_y, int voxel_grid_dim_z,
+                float voxel_grid_origin_x, float voxel_grid_origin_y, float voxel_grid_origin_z,
+                float voxel_size, float trunc_margin) {
+
+  int voxel_idx = CUDA_LOOP_IDX * CUDA_NUM_THREADS * CUDA_MAX_NUM_BLOCKS + blockIdx.x * CUDA_NUM_THREADS + threadIdx.x;
+  if (voxel_idx > (voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z))
+    return;
+
+  int pt_grid_z = (int)floor((float)voxel_idx / ((float)voxel_grid_dim_x * (float)voxel_grid_dim_y));
+  int pt_grid_y = (int)floor(((float)voxel_idx - ((float)pt_grid_z * (float)voxel_grid_dim_x * (float)voxel_grid_dim_y)) / (float)voxel_grid_dim_x);
+  int pt_grid_x = (int)((float)voxel_idx - ((float)pt_grid_z * (float)voxel_grid_dim_x * (float)voxel_grid_dim_y) - ((float)pt_grid_y * (float)voxel_grid_dim_x));
+
+  int search_radius = (int)round(trunc_margin / voxel_size);
+
+  if (voxel_grid_occ[voxel_idx] > 0) {
+    voxel_grid_TDF[voxel_idx] = 1.0f; // on surface
+    return;
+  }
+
+  // Find closest surface point
+  for (int iix = max(0, pt_grid_x - search_radius); iix < min(voxel_grid_dim_x, pt_grid_x + search_radius + 1); ++iix)
+    for (int iiy = max(0, pt_grid_y - search_radius); iiy < min(voxel_grid_dim_y, pt_grid_y + search_radius + 1); ++iiy)
+      for (int iiz = max(0, pt_grid_z - search_radius); iiz < min(voxel_grid_dim_z, pt_grid_z + search_radius + 1); ++iiz) {
+        int iidx = iiz * voxel_grid_dim_x * voxel_grid_dim_y + iiy * voxel_grid_dim_x + iix;
+        if (voxel_grid_occ[iidx] > 0) {
+          float xd = (float)(pt_grid_x - iix);
+          float yd = (float)(pt_grid_y - iiy);
+          float zd = (float)(pt_grid_z - iiz);
+          float dist = sqrtf(xd * xd + yd * yd + zd * zd) / (float)search_radius;
+          if ((1.0f - dist) > voxel_grid_TDF[voxel_idx])
+            voxel_grid_TDF[voxel_idx] = 1.0f - dist;
+        }
+      }
+}
+
+
+void compute_binary_occupancy_grid(
+    float truncated_margin,
+    float voxel_size,
+    int voxel_grid_padding,
+    float * points,
+    int num_pts
+) {
+  // Compute the minimum and maximum value from the points
+  float voxel_grid_origin_x = points[0]; 
+  float voxel_grid_origin_y = points[1]; 
+  float voxel_grid_origin_z = points[2]; 
+  float voxel_grid_max_x = points[0];
+  float voxel_grid_max_y = points[1];
+  float voxel_grid_max_z = points[2];
+  for (int pt_idx = 0; pt_idx < num_pts; ++pt_idx) {
+    voxel_grid_origin_x = min(voxel_grid_origin_x, points[pt_idx * 3 + 0]);
+    voxel_grid_origin_y = min(voxel_grid_origin_y, points[pt_idx * 3 + 1]);
+    voxel_grid_origin_z = min(voxel_grid_origin_z, points[pt_idx * 3 + 2]);
+    voxel_grid_max_x = max(voxel_grid_max_x, points[pt_idx * 3 + 0]);
+    voxel_grid_max_y = max(voxel_grid_max_y, points[pt_idx * 3 + 1]);
+    voxel_grid_max_z = max(voxel_grid_max_z, points[pt_idx * 3 + 2]);
+  }
+  std::cout << "Initial voxel_grid_origin_x: " << voxel_grid_origin_x << std::endl;
+  std::cout << "Initial voxel_grid_origin_y: " << voxel_grid_origin_y << std::endl;
+  std::cout << "Initial voxel_grid_origin_z: " << voxel_grid_origin_z << std::endl;
+
+  // Create a occupancy grid according to the maximum and minimum values of the point cloud
+  int voxel_grid_dim_x = round((voxel_grid_max_x - voxel_grid_origin_x) / voxel_size) + 1 + voxel_grid_padding * 2;
+  int voxel_grid_dim_y = round((voxel_grid_max_y - voxel_grid_origin_y) / voxel_size) + 1 + voxel_grid_padding * 2;
+  int voxel_grid_dim_z = round((voxel_grid_max_z - voxel_grid_origin_z) / voxel_size) + 1 + voxel_grid_padding * 2;
+  
+  // Compute the minimum value (m) in each dimension after adding the voxel_grid_padding 
+  voxel_grid_origin_x = voxel_grid_origin_x - voxel_grid_padding * voxel_size + voxel_size / 2;
+  voxel_grid_origin_y = voxel_grid_origin_y - voxel_grid_padding * voxel_size + voxel_size / 2;
+  voxel_grid_origin_z = voxel_grid_origin_z - voxel_grid_padding * voxel_size + voxel_size / 2;
+
+  std::cout << "voxel_grid_origin_x: " << voxel_grid_origin_x << std::endl;
+  std::cout << "voxel_grid_origin_y: " << voxel_grid_origin_y << std::endl;
+  std::cout << "voxel_grid_origin_z: " << voxel_grid_origin_z << std::endl;
+
+  std::cout << "Size of TDF voxel grid: " << voxel_grid_dim_x << 
+               " x " << voxel_grid_dim_y << " x " << voxel_grid_dim_z << std::endl;
+  std::cout << "Computing TDF voxel grid..." << std::endl;
+
+  // Convert data to a voxel occupancy grid
+  float * voxel_grid_occ = new float[voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z];
+  // Initialize occupancy grid with 0s
+  memset(voxel_grid_occ, 0, sizeof(float) * voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z);
+  for (int pt_idx = 0; pt_idx < num_pts; ++pt_idx) {
+    // Transform each point from meter to "voxel coordinates"
+    int pt_grid_x = round((points[pt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
+    int pt_grid_y = round((points[pt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
+    int pt_grid_z = round((points[pt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
+    // For each point in the point cloud assign it to a voxel in the occupancy
+    // grid and set this voxel to be equal to one
+    int v_idx = pt_grid_z * voxel_grid_dim_y * voxel_grid_dim_x + pt_grid_y * voxel_grid_dim_x + pt_grid_x;
+    voxel_grid_occ[v_idx] = 1.0f;
+  }
+
+  // Initialize TDF voxel grid
+  float * voxel_grid_TDF = new float[voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z];
+  memset(voxel_grid_TDF, 0, sizeof(float) * voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z);
+
+  // Copy voxel grids to GPU memory
+  float * gpu_voxel_grid_occ;
+  float * gpu_voxel_grid_TDF;
+  cudaMalloc(&gpu_voxel_grid_occ, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float));
+  cudaMalloc(&gpu_voxel_grid_TDF, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float));
+  marvin::checkCUDA(__LINE__, cudaGetLastError());
+  cudaMemcpy(
+    gpu_voxel_grid_occ,
+    voxel_grid_occ,
+    voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float),
+    cudaMemcpyHostToDevice
+  );
+  cudaMemcpy(
+    gpu_voxel_grid_TDF,
+    voxel_grid_TDF,
+    voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float),
+    cudaMemcpyHostToDevice
+  );
+  marvin::checkCUDA(__LINE__, cudaGetLastError());
+
+  int CUDA_NUM_LOOPS = (int)ceil((float)(voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z) / (float)(CUDA_NUM_THREADS * CUDA_MAX_NUM_BLOCKS));
+
+  for (int CUDA_LOOP_IDX = 0; CUDA_LOOP_IDX < CUDA_NUM_LOOPS; ++CUDA_LOOP_IDX) {
+    ComputeTDF <<< CUDA_MAX_NUM_BLOCKS, CUDA_NUM_THREADS >>>(CUDA_LOOP_IDX, gpu_voxel_grid_occ, gpu_voxel_grid_TDF,
+        voxel_grid_dim_x, voxel_grid_dim_y, voxel_grid_dim_z,
+        voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z,
+        voxel_size, truncated_margin);
+  }
+
+  // Load TDF voxel grid from GPU to CPU memory
+  cudaMemcpy(
+    voxel_grid_TDF,
+    gpu_voxel_grid_TDF,
+    voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float),
+    cudaMemcpyDeviceToHost
+  );
+  marvin::checkCUDA(__LINE__, cudaGetLastError());
+
+}
 
 int main(int argc, char *argv[]) {
 
@@ -28,6 +169,7 @@ int main(int argc, char *argv[]) {
   std::string out_prefix_filename(argv[3]);
   float voxel_size = std::stof(argv[4]);
   int voxel_grid_padding = 15;
+  float truncated_margin = voxel_size * 5;
 
   std::ifstream reference_pointcloud_file(reference_pointcloud_filename.c_str());
   if (!reference_pointcloud_file) {
@@ -50,7 +192,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "Third line of .ply file does not tell me number of points." << std::endl;
     return 0;
   }
-  
+
   float * reference_points = new float[num_pts * 3]; // Nx3 matrix saved as float array (row-major order)
   if (IS_PLY_BINARY) {
     std::cout << "Reading point cloud in binary format..." << std::endl;
@@ -70,7 +212,7 @@ int main(int argc, char *argv[]) {
     }
   }
   reference_pointcloud_file.close();
-  std::cout << "Loaded reference point cloud with " << num_pts_corresponding << " points!" << std::endl;
+  std::cout << "Loaded reference point cloud with " << num_pts << " points!" << std::endl;
 
   std::ifstream corresponding_pointcloud_file(corresponding_pointcloud_filename.c_str());
   if (!corresponding_pointcloud_file) {
@@ -117,77 +259,19 @@ int main(int argc, char *argv[]) {
   corresponding_pointcloud_file.close();
   std::cout << "Loaded reference point cloud with " << num_pts_corresponding << " points!" << std::endl;
 
-  float trunc_margin = voxel_size * 5;
-
-  // Compute point cloud coordinates of the origin voxel (0,0,0) of the voxel grid
-  float voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z;
-  float voxel_grid_max_x, voxel_grid_max_y, voxel_grid_max_z;
-  voxel_grid_origin_x = reference_points[0]; voxel_grid_max_x = reference_points[0];
-  voxel_grid_origin_y = reference_points[1]; voxel_grid_max_y = reference_points[1];
-  voxel_grid_origin_z = reference_points[2]; voxel_grid_max_z = reference_points[2];
-  for (int pt_idx = 0; pt_idx < num_pts; ++pt_idx) {
-    voxel_grid_origin_x = min(voxel_grid_origin_x, pts[pt_idx * 3 + 0]);
-    voxel_grid_origin_y = min(voxel_grid_origin_y, pts[pt_idx * 3 + 1]);
-    voxel_grid_origin_z = min(voxel_grid_origin_z, pts[pt_idx * 3 + 2]);
-    voxel_grid_max_x = max(voxel_grid_max_x, pts[pt_idx * 3 + 0]);
-    voxel_grid_max_y = max(voxel_grid_max_y, pts[pt_idx * 3 + 1]);
-    voxel_grid_max_z = max(voxel_grid_max_z, pts[pt_idx * 3 + 2]);
-  }
-
-  // Create a occupancy grid according to the maximum and minimum values of the point cloud
-  int voxel_grid_dim_x = round((voxel_grid_max_x - voxel_grid_origin_x) / voxel_size) + 1 + voxel_grid_padding * 2;
-  int voxel_grid_dim_y = round((voxel_grid_max_y - voxel_grid_origin_y) / voxel_size) + 1 + voxel_grid_padding * 2;
-  int voxel_grid_dim_z = round((voxel_grid_max_z - voxel_grid_origin_z) / voxel_size) + 1 + voxel_grid_padding * 2;
+  compute_binary_occupancy_grid(
+    truncated_margin,
+    voxel_size,
+    voxel_grid_padding,
+    reference_points,
+    num_pts
+  );
+  compute_binary_occupancy_grid(
+    truncated_margin,
+    voxel_size,
+    voxel_grid_padding,
+    corresponding_points,
+    num_pts_corresponding
+  );
   
-  // Compute the minimum value (m) in each dimension after adding the voxel_grid_padding 
-  voxel_grid_origin_x = voxel_grid_origin_x - voxel_grid_padding * voxel_size + voxel_size / 2;
-  voxel_grid_origin_y = voxel_grid_origin_y - voxel_grid_padding * voxel_size + voxel_size / 2;
-  voxel_grid_origin_z = voxel_grid_origin_z - voxel_grid_padding * voxel_size + voxel_size / 2;
-
-  std::cout << "voxel_grid_origin_x: " << voxel_grid_origin_x << std::endl;
-  std::cout << "voxel_grid_origin_y: " << voxel_grid_origin_y << std::endl;
-  std::cout << "voxel_grid_origin_z: " << voxel_grid_origin_z << std::endl;
-
-  std::cout << "Size of TDF voxel grid: " << voxel_grid_dim_x << " x " << voxel_grid_dim_y << " x " << voxel_grid_dim_z << std::endl;
-  std::cout << "Computing TDF voxel grid..." << std::endl;
-
-  // Compute surface occupancy grid
-  float * voxel_grid_occ = new float[voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z];
-  // Initialize occupancy grid with 0s
-  memset(voxel_grid_occ, 0, sizeof(float) * voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z);
-  for (int pt_idx = 0; pt_idx < num_pts; ++pt_idx) {
-    // Transform each point from meter to "voxel coordinates"
-    int pt_grid_x = round((pts[pt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
-    int pt_grid_y = round((pts[pt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
-    int pt_grid_z = round((pts[pt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
-    // For each point in the point cloud assign it to a voxel in the occupancy grid and set this voxel to be equal to one 
-    voxel_grid_occ[pt_grid_z * voxel_grid_dim_y * voxel_grid_dim_x + pt_grid_y * voxel_grid_dim_x + pt_grid_x] = 1.0f;
-  }
-
-  // Initialize TDF voxel grid
-  float * voxel_grid_TDF = new float[voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z];
-  memset(voxel_grid_TDF, 0, sizeof(float) * voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z);
-
-  // Copy voxel grids to GPU memory
-  float * gpu_voxel_grid_occ;
-  float * gpu_voxel_grid_TDF;
-  cudaMalloc(&gpu_voxel_grid_occ, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float));
-  cudaMalloc(&gpu_voxel_grid_TDF, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float));
-  marvin::checkCUDA(__LINE__, cudaGetLastError());
-  cudaMemcpy(gpu_voxel_grid_occ, voxel_grid_occ, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(gpu_voxel_grid_TDF, voxel_grid_TDF, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float), cudaMemcpyHostToDevice);
-  marvin::checkCUDA(__LINE__, cudaGetLastError());
-
-  int CUDA_NUM_LOOPS = (int)ceil((float)(voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z) / (float)(CUDA_NUM_THREADS * CUDA_MAX_NUM_BLOCKS));
-
-  for (int CUDA_LOOP_IDX = 0; CUDA_LOOP_IDX < CUDA_NUM_LOOPS; ++CUDA_LOOP_IDX) {
-    ComputeTDF <<< CUDA_MAX_NUM_BLOCKS, CUDA_NUM_THREADS >>>(CUDA_LOOP_IDX, gpu_voxel_grid_occ, gpu_voxel_grid_TDF,
-        voxel_grid_dim_x, voxel_grid_dim_y, voxel_grid_dim_z,
-        voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z,
-        voxel_size, trunc_margin);
-  }
-
-  // Load TDF voxel grid from GPU to CPU memory
-  cudaMemcpy(voxel_grid_TDF, gpu_voxel_grid_TDF, voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z * sizeof(float), cudaMemcpyDeviceToHost);
-  marvin::checkCUDA(__LINE__, cudaGetLastError());
 }
