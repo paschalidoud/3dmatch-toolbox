@@ -40,7 +40,7 @@ def compute_correspondences(D1, D2, threshold, tree_leaf_size=40):
     return np.array(indices)
 
 
-def compute_projected(K1, K2, scene_indices, kn):
+def compute_projected(K1, K2, scene_indices, kn, search_in_radius, search_radius):
     with_correspondence = np.arange(len(K1))[scene_indices >= 0]
     tree = KDTree(K1[with_correspondence], metric="euclidean")
     projected = np.zeros_like(K1)
@@ -48,7 +48,13 @@ def compute_projected(K1, K2, scene_indices, kn):
         if idx >= 0:
             projected[i] = K2[idx]
             continue
-        neighbors = tree.query(K1[i:i+1], k=kn, return_distance=False)[0]
+        if search_in_radius:
+            neighbors = tree.query_radius(K1[i:i+1], r=search_radius)[0]
+            if neighbors.shape[0] == 0:
+                 print "No neighbors found in this radius"
+                 exit(1)
+        else:
+            neighbors = tree.query(K1[i:i+1], k=kn, return_distance=False)[0]
         neighbor_idxs = with_correspondence[neighbors]
         deltas = K2[scene_indices[neighbor_idxs]] - K1[neighbor_idxs]
         projected[i] = K1[i] + deltas.mean(axis=0)
@@ -87,24 +93,37 @@ if __name__ == "__main__":
         help="The path to the file to save the scene flow"
     )
     parser.add_argument(
-        "threshold",
+        "--threshold",
+        default=10000,
         type=float,
         help="The distance threshold to determine the correspondences"
     )
     parser.add_argument(
-        "k_neighbors",
+        "--k_neighbors",
+        default=1,
         type=int,
         help="The distance threshold to determine the correspondences"
     )
-
     parser.add_argument(
         "--leaf_size",
         default=40,
         type=int,
         help="Leaf size used for the tree used to compute the nearest neighbor"
     )
+    parser.add_argument(
+        "--search_in_radius",
+        action="store_true",
+        help="Choose if you wish to search neighbors that are in a radius"
+    )
+    parser.add_argument(
+        "--search_radius",
+        default=1.5,
+        type=float,
+        help="Choose if you wish to search neighbors that are in a radius"
+    )
 
     args = parser.parse_args(sys.argv[1:])
+    print args.search_radius
 
     # Load the keypoints for the reference and the next frame
     K1 = np.fromfile(args.keypoints_reference_frame, dtype=np.float32).reshape(-1, 3)
@@ -126,7 +145,12 @@ if __name__ == "__main__":
         (scene_indices < 0).sum(),
         len(scene_indices)
     )
-    C = np.hstack([K1, compute_projected(K1, K2, scene_indices, args.k_neighbors)])
+    C = np.hstack(
+        [
+            K1,
+            compute_projected(K1, K2, scene_indices, args.k_neighbors, args.search_in_radius, args.search_radius)
+         ]
+    )
 
     with open(args.output_file, "wb") as out:
         C.astype(np.float32).tofile(out)
