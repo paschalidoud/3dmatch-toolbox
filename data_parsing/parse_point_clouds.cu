@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -9,6 +10,20 @@
 #define CUDA_MAX_NUM_BLOCKS 2880
 
 #define IS_PLY_BINARY false
+
+struct tdf_struct {
+    float origin_x;
+    float origin_y;
+    float origin_z;
+    int dim_x;
+    int dim_y;
+    int dim_z;
+    float * tdf_values;
+};
+
+int random_number(int max_value, int min_value) {
+    return rand() % max_value + min_value;
+}
 
 // CUDA kernel function to compute TDF voxel grid values given a point cloud (warning: approximate, but fast)
 __global__
@@ -48,8 +63,7 @@ void ComputeTDF(int CUDA_LOOP_IDX, float * voxel_grid_occ, float * voxel_grid_TD
       }
 }
 
-
-void compute_binary_occupancy_grid(
+tdf_struct compute_tdf_grid(
     float truncated_margin,
     float voxel_size,
     int voxel_grid_padding,
@@ -150,17 +164,50 @@ void compute_binary_occupancy_grid(
   );
   marvin::checkCUDA(__LINE__, cudaGetLastError());
 
+  tdf_struct tdf;
+  tdf.origin_x = voxel_grid_origin_x;
+  tdf.origin_y = voxel_grid_origin_y;
+  tdf.origin_z = voxel_grid_origin_z;
+  tdf.dim_x = voxel_grid_dim_x;
+  tdf.dim_y = voxel_grid_dim_y;
+  tdf.dim_z = voxel_grid_dim_z;
+  tdf.tdf_values = voxel_grid_TDF;
+
+  return tdf;
+}
+
+void compute_random_keypoints(
+    float * points,
+    std::vector<int> random_idxs,
+    float voxel_grid_origin_x,
+    float voxel_grid_origin_y,
+    float voxel_grid_origin_z,
+    float voxel_size,
+    float * keypts,
+    float * keypts_grid
+) {
+    std::cout << "Finding random surface keypoints..." << std::endl;
+
+    for (int keypt_idx = 0; keypt_idx < random_idxs.size(); ++keypt_idx) {
+        keypts[keypt_idx * 3 + 0] = points[random_idxs[keypt_idx] * 3 + 0];
+        keypts[keypt_idx * 3 + 1] = points[random_idxs[keypt_idx] * 3 + 1];
+        keypts[keypt_idx * 3 + 2] = points[random_idxs[keypt_idx] * 3 + 2];
+        keypts_grid[keypt_idx * 3 + 0] = round((points[keypt_idx * 3 + 0] - voxel_grid_origin_x) / voxel_size);
+        keypts_grid[keypt_idx * 3 + 1] = round((points[keypt_idx * 3 + 1] - voxel_grid_origin_y) / voxel_size);
+        keypts_grid[keypt_idx * 3 + 2] = round((points[keypt_idx * 3 + 2] - voxel_grid_origin_z) / voxel_size);
+    }
 }
 
 int main(int argc, char *argv[]) {
 
   // Check if the command line arguments are correct
-  if (argc != 5) {
+  if (argc != 6) {
     std::cout << "Usage: Generate 30x30x30 3D patch for each point in the pointcloud" << std::endl;
     std::cout << "reference_pointcloud: Input file containing the reference pointcloud to be processed" << std::endl;
     std::cout << "corresponding_pointcloud: Input file containing the corresponding pointcloud to be processed" << std::endl;
     std::cout << "output_prefix: Output prefix of the files used to store the computed descriptors and keypoints" << std::endl;
     std::cout << "voxel_size: Voxel size of the local 3D path " << std::endl;
+    std::cout << "number_random_samples: The number of points to be sampled " << std::endl;
     return(1);
   }
 
@@ -168,8 +215,10 @@ int main(int argc, char *argv[]) {
   std::string corresponding_pointcloud_filename(argv[2]);
   std::string out_prefix_filename(argv[3]);
   float voxel_size = std::stof(argv[4]);
+  int num_random_samples = std::atoi(argv[5]);
   int voxel_grid_padding = 15;
   float truncated_margin = voxel_size * 5;
+
 
   std::ifstream reference_pointcloud_file(reference_pointcloud_filename.c_str());
   if (!reference_pointcloud_file) {
@@ -259,19 +308,166 @@ int main(int argc, char *argv[]) {
   corresponding_pointcloud_file.close();
   std::cout << "Loaded reference point cloud with " << num_pts_corresponding << " points!" << std::endl;
 
-  compute_binary_occupancy_grid(
+  tdf_struct reference_tdf = compute_tdf_grid(
     truncated_margin,
     voxel_size,
     voxel_grid_padding,
     reference_points,
     num_pts
   );
-  compute_binary_occupancy_grid(
+  tdf_struct correspondence_tdf = compute_tdf_grid(
     truncated_margin,
     voxel_size,
     voxel_grid_padding,
     corresponding_points,
     num_pts_corresponding
   );
-  
+
+  // Create a vector with matching indexes
+  std::vector<int> matching_idxs;
+  while (matching_idxs.size() < num_random_samples) {
+    int idx = random_number(num_pts, 0);
+    if (std::find( matching_idxs.begin(), matching_idxs.end(), idx ) == matching_idxs.end()) {
+        matching_idxs.push_back(idx);
+    }
+  }
+
+  // Create a vector with non matching indexes
+  std::vector<int> non_matching_idxs;
+  while (non_matching_idxs.size() < num_random_samples) {
+    int idx = random_number(num_pts, 0);
+    if ( std::find( non_matching_idxs.begin(), non_matching_idxs.end(), idx ) == non_matching_idxs.end() &&
+        std::find( matching_idxs.begin(), matching_idxs.end(), idx ) == matching_idxs.end()
+    ) {
+        non_matching_idxs.push_back(idx);
+    }
+  }
+
+  float * keypts = new float[num_random_samples * 3];
+  float * keypts_grid = new float[num_random_samples * 3];
+
+  // Compute keypoints and the keypoints grid for the reference point cloud
+  compute_random_keypoints(
+    reference_points,
+    matching_idxs,
+    reference_tdf.origin_x,
+    reference_tdf.origin_y,
+    reference_tdf.origin_z,
+    voxel_size,
+    keypts,
+    keypts_grid
+  );
+
+  // Save keypoints as binary file (Nx30x30 float array, row-major order)
+  std::string p1_saveto_path = out_prefix_filename + ".p1_tdf.bin";
+  std::ofstream p1_out_file(p1_saveto_path, std::ios::binary | std::ios::app);
+
+  // Compute the 30x30x30 value of sampled keypoints
+  for ( int keypt_idx = 0; keypt_idx < num_random_samples; ++keypt_idx) {
+    float keypt_grid_x = keypts_grid[keypt_idx * 3 + 0];
+    float keypt_grid_y = keypts_grid[keypt_idx * 3 + 1];
+    float keypt_grid_z = keypts_grid[keypt_idx * 3 + 2];
+
+    // Get local TDF around keypoint
+    float * local_voxel_grid_TDF = new float[30 * 30 * 30];
+    int local_voxel_idx = 0;
+    for (int z = keypt_grid_z - 15; z < keypt_grid_z + 15; ++z)
+        for (int y = keypt_grid_y - 15; y < keypt_grid_y + 15; ++y)
+            for (int x = keypt_grid_x - 15; x < keypt_grid_x + 15; ++x) {
+                local_voxel_grid_TDF[ local_voxel_idx ] = 
+         reference_tdf.tdf_values[ z * reference_tdf.dim_x * reference_tdf.dim_y + y * reference_tdf.dim_x + x ];
+                local_voxel_idx++;
+          }
+
+    std::cout << "Saving TDF values for current keypoint to disk (p1_tdf.bin)..." << std::endl;
+    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
+        p1_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+
+    delete [] local_voxel_grid_TDF;
+ }
+ p1_out_file.close();
+
+ // Compute keypoints and the keypoints grid for the reference point cloud
+ compute_random_keypoints(
+    corresponding_points,
+    matching_idxs,
+    correspondence_tdf.origin_x,
+    correspondence_tdf.origin_y,
+    correspondence_tdf.origin_z,
+    voxel_size,
+    keypts,
+    keypts_grid
+ );
+
+ // Save keypoints as binary file (Nx30x30 float array, row-major order)
+ std::string p2_saveto_path = out_prefix_filename + ".p2_tdf.bin";
+ std::ofstream p2_out_file(p2_saveto_path, std::ios::binary | std::ios::app);
+
+ // Compute the 30x30x30 value of sampled keypoints
+ for ( int keypt_idx = 0; keypt_idx < num_random_samples; ++keypt_idx) {
+    float keypt_grid_x = keypts_grid[keypt_idx * 3 + 0];
+    float keypt_grid_y = keypts_grid[keypt_idx * 3 + 1];
+    float keypt_grid_z = keypts_grid[keypt_idx * 3 + 2];
+
+    // Get local TDF around keypoint
+    float * local_voxel_grid_TDF = new float[30 * 30 * 30];
+    int local_voxel_idx = 0;
+    for (int z = keypt_grid_z - 15; z < keypt_grid_z + 15; ++z)
+        for (int y = keypt_grid_y - 15; y < keypt_grid_y + 15; ++y)
+            for (int x = keypt_grid_x - 15; x < keypt_grid_x + 15; ++x) {
+                local_voxel_grid_TDF[ local_voxel_idx ] = 
+        correspondence_tdf.tdf_values[ z * correspondence_tdf.dim_x * correspondence_tdf.dim_y + y * correspondence_tdf.dim_x + x ];
+                local_voxel_idx++;
+          }
+
+    std::cout << "Saving TDF values for current keypoint to disk (.p2_tdf.bin)..." << std::endl;
+    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
+        p2_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+
+    delete [] local_voxel_grid_TDF;
+ }
+ p2_out_file.close();
+
+ // Compute keypoints and the keypoints grid for the reference point cloud
+ compute_random_keypoints(
+    corresponding_points,
+    non_matching_idxs,
+    correspondence_tdf.origin_x,
+    correspondence_tdf.origin_y,
+    correspondence_tdf.origin_z,
+    voxel_size,
+    keypts,
+    keypts_grid
+ );
+
+ // Save keypoints as binary file (Nx30x30 float array, row-major order)
+ std::string p3_saveto_path = out_prefix_filename + ".p3_tdf.bin";
+ std::ofstream p3_out_file(p3_saveto_path, std::ios::binary | std::ios::app);
+
+ // Compute the 30x30x30 value of sampled keypoints
+ for ( int keypt_idx = 0; keypt_idx < num_random_samples; ++keypt_idx) {
+    float keypt_grid_x = keypts_grid[keypt_idx * 3 + 0];
+    float keypt_grid_y = keypts_grid[keypt_idx * 3 + 1];
+    float keypt_grid_z = keypts_grid[keypt_idx * 3 + 2];
+
+    // Get local TDF around keypoint
+    float * local_voxel_grid_TDF = new float[30 * 30 * 30];
+    int local_voxel_idx = 0;
+    for (int z = keypt_grid_z - 15; z < keypt_grid_z + 15; ++z)
+        for (int y = keypt_grid_y - 15; y < keypt_grid_y + 15; ++y)
+            for (int x = keypt_grid_x - 15; x < keypt_grid_x + 15; ++x) {
+                local_voxel_grid_TDF[ local_voxel_idx ] = 
+        correspondence_tdf.tdf_values[ z * correspondence_tdf.dim_x * correspondence_tdf.dim_y + y * correspondence_tdf.dim_x + x ];
+                local_voxel_idx++;
+          }
+
+    std::cout << "Saving TDF values for current keypoint to disk (.p3_tdf.bin)..." << std::endl;
+    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
+        p3_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+
+    delete [] local_voxel_grid_TDF;
+ }
+ p3_out_file.close();
+ delete [] keypts;
+ delete [] keypts_grid;
 }
