@@ -432,8 +432,7 @@ int main(int argc, char *argv[]) {
           }
 
     std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p1_tdf.bin)..." << std::endl;
-    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
-        p1_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+    p1_out_file.write((char*)local_voxel_grid_TDF, sizeof(float)*30*30*30);
 
     delete [] local_voxel_grid_TDF;
  }
@@ -473,8 +472,7 @@ int main(int argc, char *argv[]) {
           }
 
     std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p2_tdf.bin)..." << std::endl;
-    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
-        p2_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+    p2_out_file.write((char*)local_voxel_grid_TDF, sizeof(float)*30*30*30);
 
     delete [] local_voxel_grid_TDF;
  }
@@ -514,8 +512,7 @@ int main(int argc, char *argv[]) {
           }
 
     std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p3_tdf.bin)..." << std::endl;
-    for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
-        p3_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
+    p3_out_file.write((char*)local_voxel_grid_TDF, sizeof(float)*30*30*30);
 
     delete [] local_voxel_grid_TDF;
  }
