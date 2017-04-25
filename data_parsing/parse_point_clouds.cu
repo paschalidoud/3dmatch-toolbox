@@ -201,10 +201,11 @@ void compute_random_keypoints(
 int main(int argc, char *argv[]) {
 
   // Check if the command line arguments are correct
-  if (argc != 6) {
+  if (argc != 7) {
     std::cout << "Usage: Generate 30x30x30 3D patch for each point in the pointcloud" << std::endl;
     std::cout << "reference_pointcloud: Input file containing the reference pointcloud to be processed" << std::endl;
     std::cout << "corresponding_pointcloud: Input file containing the corresponding pointcloud to be processed" << std::endl;
+    std::cout << "non_matching_pointcloud: Input file containing the non matching pointcloud to be processed" << std::endl;
     std::cout << "output_prefix: Output prefix of the files used to store the computed descriptors and keypoints" << std::endl;
     std::cout << "voxel_size: Voxel size of the local 3D path " << std::endl;
     std::cout << "number_random_samples: The number of points to be sampled " << std::endl;
@@ -213,9 +214,10 @@ int main(int argc, char *argv[]) {
 
   std::string reference_pointcloud_filename(argv[1]);
   std::string corresponding_pointcloud_filename(argv[2]);
-  std::string out_prefix_filename(argv[3]);
-  float voxel_size = std::stof(argv[4]);
-  int num_random_samples = std::atoi(argv[5]);
+  std::string non_matching_pointcloud_filename(argv[3]);
+  std::string out_prefix_filename(argv[4]);
+  float voxel_size = std::stof(argv[5]);
+  int num_random_samples = std::atoi(argv[6]);
   int voxel_grid_padding = 15;
   float truncated_margin = voxel_size * 5;
 
@@ -288,7 +290,7 @@ int main(int argc, char *argv[]) {
   float * corresponding_points = new float[num_pts_corresponding * 3]; // Nx3 matrix saved as float array (row-major order)
   if (IS_PLY_BINARY) {
     std::cout << "Reading corresponding point cloud in binary format..." << std::endl;
-    corresponding_pointcloud_file.read((char*)corresponding_points, sizeof(float) * num_pts * 3);
+    corresponding_pointcloud_file.read((char*)corresponding_points, sizeof(float) * num_pts_corresponding * 3);
   }
   else {
     std::cout << "Reading corresponding point cloud in ascii format..." << std::endl;
@@ -306,7 +308,52 @@ int main(int argc, char *argv[]) {
   // This is to read ply files that are in binary format
   //pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
   corresponding_pointcloud_file.close();
-  std::cout << "Loaded reference point cloud with " << num_pts_corresponding << " points!" << std::endl;
+  std::cout << "Loaded corresponding point cloud with " << num_pts_corresponding << " points!" << std::endl;
+
+  std::ifstream non_matching_pointcloud_file(non_matching_pointcloud_filename.c_str());
+  if (!non_matching_pointcloud_file) {
+    std::cerr << "Point cloud file not found." << std::endl;
+    return -1;
+  }
+  int num_pts_non_matching = 0;
+  for (int line_idx = 0; line_idx < 7; ++line_idx) {
+    std::string line_str;
+    std::getline(non_matching_pointcloud_file, line_str);
+    if (line_idx == 2) {
+      std::istringstream tmp_line(line_str);
+      std::string tmp_line_prefix;
+      tmp_line >> tmp_line_prefix;
+      tmp_line >> tmp_line_prefix;
+      tmp_line >> num_pts_non_matching;
+    }
+  }
+  if (num_pts_non_matching == 0) {
+    std::cerr << "Third line of .ply file does not tell me number of points." << std::endl;
+    return 0;
+  }
+  
+  float * non_matching_points = new float[num_pts_non_matching * 3]; // Nx3 matrix saved as float array (row-major order)
+  if (IS_PLY_BINARY) {
+    std::cout << "Reading corresponding point cloud in binary format..." << std::endl;
+    non_matching_pointcloud_file.read((char*)non_matching_points, sizeof(float) * num_pts_non_matching * 3);
+  }
+  else {
+    std::cout << "Reading corresponding point cloud in ascii format..." << std::endl;
+    // This is to read ply files that are in ascii format
+    float ptx, pty, ptz;
+    int i = 0;
+    while (non_matching_pointcloud_file >> ptx >> pty >> ptz) {
+     non_matching_points[i + 0] = ptx;
+     non_matching_points[i + 1] = pty;
+     non_matching_points[i + 2] = ptz;
+      // std::cout << "ptx: " << ptx << " pty: " << pty << " ptz: " << ptz << std::endl;
+      i += 3;
+    }
+  }
+  // This is to read ply files that are in binary format
+  //pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
+  non_matching_pointcloud_file.close();
+  std::cout << "Loaded non-matching point cloud with " << num_pts_non_matching << " points!" << std::endl;
 
   tdf_struct reference_tdf = compute_tdf_grid(
     truncated_margin,
@@ -322,6 +369,13 @@ int main(int argc, char *argv[]) {
     corresponding_points,
     num_pts_corresponding
   );
+  tdf_struct non_matching_tdf = compute_tdf_grid(
+    truncated_margin,
+    voxel_size,
+    voxel_grid_padding,
+    non_matching_points,
+    num_pts_non_matching
+  );
 
   // Create a vector with matching indexes
   std::vector<int> matching_idxs;
@@ -335,10 +389,8 @@ int main(int argc, char *argv[]) {
   // Create a vector with non matching indexes
   std::vector<int> non_matching_idxs;
   while (non_matching_idxs.size() < num_random_samples) {
-    int idx = random_number(num_pts, 0);
-    if ( std::find( non_matching_idxs.begin(), non_matching_idxs.end(), idx ) == non_matching_idxs.end() &&
-        std::find( matching_idxs.begin(), matching_idxs.end(), idx ) == matching_idxs.end()
-    ) {
+    int idx = random_number(num_pts_non_matching, 0);
+    if ( std::find( non_matching_idxs.begin(), non_matching_idxs.end(), idx ) == non_matching_idxs.end()) {
         non_matching_idxs.push_back(idx);
     }
   }
@@ -379,7 +431,7 @@ int main(int argc, char *argv[]) {
                 local_voxel_idx++;
           }
 
-    std::cout << "Saving TDF values for current keypoint to disk (p1_tdf.bin)..." << std::endl;
+    std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p1_tdf.bin)..." << std::endl;
     for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
         p1_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
 
@@ -420,7 +472,7 @@ int main(int argc, char *argv[]) {
                 local_voxel_idx++;
           }
 
-    std::cout << "Saving TDF values for current keypoint to disk (.p2_tdf.bin)..." << std::endl;
+    std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p2_tdf.bin)..." << std::endl;
     for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
         p2_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
 
@@ -430,11 +482,11 @@ int main(int argc, char *argv[]) {
 
  // Compute keypoints and the keypoints grid for the reference point cloud
  compute_random_keypoints(
-    corresponding_points,
+    non_matching_points,
     non_matching_idxs,
-    correspondence_tdf.origin_x,
-    correspondence_tdf.origin_y,
-    correspondence_tdf.origin_z,
+    non_matching_tdf.origin_x,
+    non_matching_tdf.origin_y,
+    non_matching_tdf.origin_z,
     voxel_size,
     keypts,
     keypts_grid
@@ -457,11 +509,11 @@ int main(int argc, char *argv[]) {
         for (int y = keypt_grid_y - 15; y < keypt_grid_y + 15; ++y)
             for (int x = keypt_grid_x - 15; x < keypt_grid_x + 15; ++x) {
                 local_voxel_grid_TDF[ local_voxel_idx ] = 
-        correspondence_tdf.tdf_values[ z * correspondence_tdf.dim_x * correspondence_tdf.dim_y + y * correspondence_tdf.dim_x + x ];
+        non_matching_tdf.tdf_values[ z * non_matching_tdf.dim_x * non_matching_tdf.dim_y + y * non_matching_tdf.dim_x + x ];
                 local_voxel_idx++;
           }
 
-    std::cout << "Saving TDF values for current keypoint to disk (.p3_tdf.bin)..." << std::endl;
+    std::cout << "Saving TDF values for the " << keypt_idx <<" keypoint " << "from the " << num_random_samples << " to disk (.p3_tdf.bin)..." << std::endl;
     for (int keypt_val_idx = 0; keypt_val_idx < 30 * 30 * 30; ++keypt_val_idx)
         p3_out_file.write((char*)&local_voxel_grid_TDF[keypt_val_idx], sizeof(float));
 

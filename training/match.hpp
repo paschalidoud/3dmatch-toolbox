@@ -7,6 +7,9 @@
 // this file (or any portion of it) in your project.
 // ---------------------------------------------------------
 
+#include <iostream>
+#include <fstream>
+#include <sstream>
 #include "utils.hpp"
 
 // CUDA kernel function: for each voxel center of the voxel grid, find nearest neighbor distance to the surface point cloud
@@ -241,267 +244,319 @@ public:
     checkCUDA(__LINE__, cudaFree(GPU_closest_pt_dists));
   }
 
+  // void prefetch() {
+
+  //   checkCUDA(__LINE__, cudaSetDevice(GPU));
+
+  //   // Naming convention: p1 and p2 are matches, p1 and p3 are non-matches
+  //   for (int batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+
+  //     float * depth_im_p1 = new float[im_height * im_width];
+  //     float * depth_im_p2 = new float[im_height * im_width];
+  //     float * depth_im_p3 = new float[im_height * im_width];
+
+  //     float cam_K_p1[9];
+  //     float cam_K_p2[9];
+  //     float cam_K_p3[9];
+
+  //     std::string file_prefix_p1;
+  //     int p1_pix_x;
+  //     int p1_pix_y;
+  //     std::string file_prefix_p2;
+  //     int p2_pix_x;
+  //     int p2_pix_y;
+  //     std::string file_prefix_p3;
+  //     int p3_pix_x;
+  //     int p3_pix_y;
+
+  //     // Find positive correspondence p1 and p2
+  //     while (true) {
+
+  //       // Find a random scene
+  //       std::vector<std::string> scene_list;
+  //       GetFilesInDirectory(data_path, scene_list, "");
+  //       int rand_scene_idx = (int)round(GetRandomFloat(0.0f, (float)(scene_list.size() - 1)));
+  //       std::string scene_name = scene_list[rand_scene_idx];
+
+  //       // Find a random sequence
+  //       std::vector<std::string> seq_list;
+  //       GetFilesInDirectory(data_path + "/" + scene_name, seq_list, "seq");
+  //       int rand_seq_idx = (int)round(GetRandomFloat(0.0f, (float)(seq_list.size() - 1)));
+  //       std::string seq_name = seq_list[rand_seq_idx];
+
+  //       // Find a random frame
+  //       std::vector<std::string> frame_list_p1;
+  //       GetFilesInDirectory(data_path + "/" + scene_name + "/" + seq_name, frame_list_p1, ".depth.png");
+  //       int rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(frame_list_p1.size() - 1)));
+  //       std::string frame_name_p1 = frame_list_p1[rand_frame_idx];
+
+  //       // Pick a random pixel
+  //       float rand_pix_x = round(GetRandomFloat(0.0f, (float)(im_width - 1)));
+  //       float rand_pix_y = round(GetRandomFloat(0.0f, (float)(im_height - 1)));
+
+  //       // Read depth image
+  //       ReadDepth(data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1, im_height, im_width, depth_im_p1);
+
+  //       // Get camera intrinsics
+  //       std::string cam_K_file_p1 = data_path + "/" + scene_name + "/camera-intrinsics.txt";
+  //       std::vector<float> cam_K_vec_p1 = LoadMatrixFromFile(cam_K_file_p1, 3, 3);
+  //       std::copy(cam_K_vec_p1.begin(), cam_K_vec_p1.end(), cam_K_p1);
+
+  //       // Get depth at pixel. If it is zero, resample
+  //       float depth_val_p1 = depth_im_p1[(int)rand_pix_y * im_width + (int)rand_pix_x];
+  //       if (depth_val_p1 == 0)
+  //         continue;
+
+  //       // Save p1
+  //       file_prefix_p1 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1.substr(0, frame_name_p1.length() - 10);
+  //       p1_pix_x = (int)rand_pix_x;
+  //       p1_pix_y = (int)rand_pix_y;
+
+  //       // Project point to 3D camera coordinates
+  //       float p1_cam_z = depth_val_p1;
+  //       float p1_cam_x = (rand_pix_x + 0.5f - cam_K_p1[2]) * p1_cam_z / cam_K_p1[0];
+  //       float p1_cam_y = (rand_pix_y + 0.5f - cam_K_p1[5]) * p1_cam_z / cam_K_p1[4];
+
+  //       // Get extrinsics of base frame
+  //       std::string cam2world_file_p1 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1.substr(0, frame_name_p1.length() - 10) + ".pose.txt";
+  //       std::vector<float> cam2world_p1 = LoadMatrixFromFile(cam2world_file_p1, 4, 4);
+
+  //       // Convert 3D point to world coordinates
+  //       float p1_world_x = cam2world_p1[0] * p1_cam_x + cam2world_p1[1] * p1_cam_y + cam2world_p1[2] * p1_cam_z + cam2world_p1[3];
+  //       float p1_world_y = cam2world_p1[4] * p1_cam_x + cam2world_p1[5] * p1_cam_y + cam2world_p1[6] * p1_cam_z + cam2world_p1[7];
+  //       float p1_world_z = cam2world_p1[8] * p1_cam_x + cam2world_p1[9] * p1_cam_y + cam2world_p1[10] * p1_cam_z + cam2world_p1[11];
+
+  //       // Get list of frames from the scene with all valid positive correspondences
+  //       std::vector<std::string> valid_frame_list_p2;
+  //       std::vector<float> valid_p2_pix_x;
+  //       std::vector<float> valid_p2_pix_y;
+  //       std::vector<float> valid_p2_depth;
+  //       for (int seq_idx = 0; seq_idx < seq_list.size(); seq_idx++) {
+  //         std::string curr_seq_name = seq_list[seq_idx];
+
+  //         std::vector<std::string> curr_seq_frame_list;
+  //         GetFilesInDirectory(data_path + "/" + scene_name + "/" + curr_seq_name, curr_seq_frame_list, ".pose.txt");
+
+  //         // std::cout << curr_seq_frame_list.size() << std::endl;
+  //         for (int frame_idx = 0; frame_idx < curr_seq_frame_list.size(); frame_idx++) {
+
+  //           // Get extrinsics of current frame
+  //           std::string curr_seq_frame_cam2world_file = data_path + "/" + scene_name + "/" + curr_seq_name + "/" + curr_seq_frame_list[frame_idx];
+  //           std::vector<float> curr_seq_frame_cam2world = LoadMatrixFromFile(curr_seq_frame_cam2world_file, 4, 4);
+
+  //           // Get camera intrinsics of current frame
+  //           std::string cam_K_p2_file = data_path + "/" + scene_name + "/camera-intrinsics.txt";
+  //           std::vector<float> cam_K_p2_vec = LoadMatrixFromFile(cam_K_p2_file, 3, 3);
+  //           std::copy(cam_K_p2_vec.begin(), cam_K_p2_vec.end(), cam_K_p2);
+
+  //           // Project p1 from world coordinates to image pixel coordinates of current frame
+  //           float p2_cam_xt = p1_world_x - curr_seq_frame_cam2world[3];
+  //           float p2_cam_yt = p1_world_y - curr_seq_frame_cam2world[7];
+  //           float p2_cam_zt = p1_world_z - curr_seq_frame_cam2world[11];
+  //           float p2_cam_x = curr_seq_frame_cam2world[0] * p2_cam_xt + curr_seq_frame_cam2world[4] * p2_cam_yt + curr_seq_frame_cam2world[8] * p2_cam_zt;
+  //           float p2_cam_y = curr_seq_frame_cam2world[1] * p2_cam_xt + curr_seq_frame_cam2world[5] * p2_cam_yt + curr_seq_frame_cam2world[9] * p2_cam_zt;
+  //           float p2_cam_z = curr_seq_frame_cam2world[2] * p2_cam_xt + curr_seq_frame_cam2world[6] * p2_cam_yt + curr_seq_frame_cam2world[10] * p2_cam_zt;
+  //           float proj_p2_pix_x = round((cam_K_p2[0] * (p2_cam_x / p2_cam_z) + cam_K_p2[2]) - 0.5f);
+  //           float proj_p2_pix_y = round((cam_K_p2[4] * (p2_cam_y / p2_cam_z) + cam_K_p2[5]) - 0.5f);
+
+  //           // Check if pixel coordinates are within image bounds
+  //           if (proj_p2_pix_x < 0 || proj_p2_pix_x >= (float)im_width || proj_p2_pix_y < 0 || proj_p2_pix_y >= (float)im_height)
+  //             continue;
+
+  //           // Check if camera location of current frame is at least 1m away from camera location of frame of p1
+  //           if (sqrtf((curr_seq_frame_cam2world[3] - cam2world_p1[3]) * (curr_seq_frame_cam2world[3] - cam2world_p1[3]) + 
+  //                     (curr_seq_frame_cam2world[7] - cam2world_p1[7]) * (curr_seq_frame_cam2world[7] - cam2world_p1[7]) + 
+  //                     (curr_seq_frame_cam2world[11] - cam2world_p1[11]) * (curr_seq_frame_cam2world[11] - cam2world_p1[11])) < 1.0f)
+  //             continue;
+
+  //           valid_frame_list_p2.push_back(curr_seq_frame_cam2world_file.substr(0, curr_seq_frame_cam2world_file.length() - 9));
+  //           valid_p2_pix_x.push_back(proj_p2_pix_x);
+  //           valid_p2_pix_y.push_back(proj_p2_pix_y);
+  //           valid_p2_depth.push_back(p2_cam_z);
+  //         }
+  //       }
+
+  //       if (valid_frame_list_p2.size() == 0)
+  //         continue;
+
+  //       // Pick a random positive correspondence (max: 100 tries)
+  //       std::string frame_name_p2;
+  //       for (int try_idx = 0; try_idx < 100; try_idx++) {
+  //         rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(valid_frame_list_p2.size() - 1)));
+  //         frame_name_p2 = valid_frame_list_p2[rand_frame_idx];
+
+  //         // Check that positive correspondence has depth in other frame
+  //         std::string depth_im_file_p2 = frame_name_p2 + ".depth.png";
+  //         ReadDepth(depth_im_file_p2, im_height, im_width, depth_im_p2);
+  //         float depth_val_p2 = depth_im_p2[(int)(valid_p2_pix_y[rand_frame_idx]) * im_width + (int)(valid_p2_pix_x[rand_frame_idx])];
+  //         if (depth_val_p2 == 0)
+  //           continue;
+
+  //         // Check that positive correspondence in world coordinates is close enough
+  //         if (abs(valid_p2_depth[rand_frame_idx] - depth_val_p2) > 0.03)
+  //           continue;
+
+  //         break;
+  //       }
+
+  //       // Set positive correspondence point as p2
+  //       file_prefix_p2 = frame_name_p2;
+  //       p2_pix_x = (int)(valid_p2_pix_x[rand_frame_idx]);
+  //       p2_pix_y = (int)(valid_p2_pix_y[rand_frame_idx]);
+  //       break;
+  //     }
+
+  //     // Find a negative correspondence p3
+  //     while (true) {
+
+  //       // Find a random scene
+  //       std::vector<std::string> scene_list;
+  //       GetFilesInDirectory(data_path, scene_list, "");
+  //       int rand_scene_idx = (int)round(GetRandomFloat(0.0f, (float)(scene_list.size() - 1)));
+  //       std::string scene_name = scene_list[rand_scene_idx];
+
+  //       // Find a random sequence
+  //       std::vector<std::string> seq_list;
+  //       GetFilesInDirectory(data_path + "/" + scene_name, seq_list, "seq");
+  //       int rand_seq_idx = (int)round(GetRandomFloat(0.0f, (float)(seq_list.size() - 1)));
+  //       std::string seq_name = seq_list[rand_seq_idx];
+
+  //       // Find a random frame
+  //       std::vector<std::string> frame_list_p3;
+  //       GetFilesInDirectory(data_path + "/" + scene_name + "/" + seq_name, frame_list_p3, ".depth.png");
+  //       int rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(frame_list_p3.size() - 1)));
+  //       std::string frame_name_p3 = frame_list_p3[rand_frame_idx];
+
+  //       // Pick a random pixel
+  //       float rand_p3_pix_x = round(GetRandomFloat(0.0f, (float)(im_width - 1)));
+  //       float rand_p3_pix_y = round(GetRandomFloat(0.0f, (float)(im_height - 1)));
+
+  //       // Read depth image
+  //       ReadDepth(data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p3, im_height, im_width, depth_im_p3);
+
+  //       // Get camera intrinsics
+  //       std::string cam_K_p3_file = data_path + "/" + scene_name + "/camera-intrinsics.txt";
+  //       std::vector<float> cam_K_p3_vec = LoadMatrixFromFile(cam_K_p3_file, 3, 3);
+  //       std::copy(cam_K_p3_vec.begin(), cam_K_p3_vec.end(), cam_K_p3);
+
+  //       // Get depth at pixel. If it is zero, resample
+  //       float depth_val_p3 = depth_im_p3[(int)rand_p3_pix_y * im_width + (int)rand_p3_pix_x];
+  //       if (depth_val_p3 == 0)
+  //         continue;
+
+  //       // Set negative correspondence point as p3
+  //       file_prefix_p3 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p3.substr(0, frame_name_p3.length() - 10);
+  //       p3_pix_x = (int)rand_p3_pix_x;
+  //       p3_pix_y = (int)rand_p3_pix_y;
+  //       break;
+  //     }
+
+  //     // For debugging
+  //     // std::cout << file_prefix_p1 << " " << p1_pix_x << " " << p1_pix_y << std::endl;
+  //     // std::cout << file_prefix_p2 << " " << p2_pix_x << " " << p2_pix_y << std::endl;
+  //     // std::cout << file_prefix_p3 << " " << p3_pix_x << " " << p3_pix_y << std::endl << std::endl;
+
+  //     std::string depth_im_file_p1 = file_prefix_p1 + ".depth.png";
+  //     std::string cam_pose_file_p1 = file_prefix_p1 + ".pose.txt";
+  //     std::string depth_im_file_p2 = file_prefix_p2 + ".depth.png";
+  //     std::string cam_pose_file_p2 = file_prefix_p2 + ".pose.txt";
+  //     std::string depth_im_file_p3 = file_prefix_p3 + ".depth.png";
+  //     std::string cam_pose_file_p3 = file_prefix_p3 + ".pose.txt";
+
+  //     // Convert depth image to row-major array
+  //     ReadDepth(depth_im_file_p1, im_height, im_width, depth_im_p1);
+
+  //     // TDF voxel grid parameters
+  //     int voxel_grid_dim = 30; // In voxels
+  //     float voxel_size = 0.01f; // In meters
+  //     float trunc_margin = 5 * voxel_size;
+  //     int num_grid_pts = voxel_grid_dim * voxel_grid_dim * voxel_grid_dim;
+
+  //     // Compute TDF voxel grid around p1
+  //     float * voxel_grid_TDF_p1 = new float[num_grid_pts];
+  //     GetLocalPointvoxel_grid_TDF(p1_pix_x, p1_pix_y, cam_K_p1, depth_im_p1, im_height, im_width, voxel_grid_TDF_p1, voxel_grid_dim, voxel_size, trunc_margin);
+
+  //     // For debugging
+  //     // FILE *fp = fopen("debugBaseMatch.txt", "w");
+  //     // int iret = fprintf(fp, "path:%s x:%d y:%d\n",baseFramePrefix.c_str(),corresBasePointX[match_idx],corresBasePointY[match_idx]);
+  //     // for (int i = 0; i < num_grid_pts; ++i)
+  //     //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p1[i]);
+  //     // fclose(fp);
+
+  //     // Compute TDF voxel grid around p2
+  //     // float * depth_im_p2 = new float[im_height * im_width];
+  //     ReadDepth(depth_im_file_p2, im_height, im_width, depth_im_p2);
+  //     float * voxel_grid_TDF_p2 = new float[num_grid_pts];
+  //     GetLocalPointvoxel_grid_TDF(p2_pix_x, p2_pix_y, cam_K_p2, depth_im_p2, im_height, im_width, voxel_grid_TDF_p2, voxel_grid_dim, voxel_size, trunc_margin);
+
+  //     // fp = fopen("debugPosMatch.txt", "w");
+  //     // iret = fprintf(fp, "path:%s x:%d y:%d\n",posFramePrefix.c_str(),corresPosPointX[match_idx],corresPosPointY[match_idx]);
+  //     // for (int i = 0; i < num_grid_pts; ++i)
+  //     //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p2[i]);
+  //     // fclose(fp);
+
+  //     // Compute TDF voxel grid around p3
+  //     ReadDepth(depth_im_file_p3, im_height, im_width, depth_im_p3);
+  //     float * voxel_grid_TDF_p3 = new float[num_grid_pts];
+  //     GetLocalPointvoxel_grid_TDF(p3_pix_x, p3_pix_y, cam_K_p3, depth_im_p3, im_height, im_width, voxel_grid_TDF_p3, voxel_grid_dim, voxel_size, trunc_margin);
+
+  //     // fp = fopen("debugNegMatch.txt", "w");
+  //     // iret = fprintf(fp, "path:%s x:%d y:%d\n",negFramePrefix.c_str(),corresNegPointX[match_idx],corresNegPointY[match_idx]);
+  //     // for (int i = 0; i < num_grid_pts; ++i)
+  //     //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p3[i]);
+  //     // fclose(fp);
+
+  //     // Copy to data response
+  //     checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[0][batch_idx * num_grid_pts]), voxel_grid_TDF_p1, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
+  //     checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[1][batch_idx * num_grid_pts]), voxel_grid_TDF_p2, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
+  //     checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[2][batch_idx * num_grid_pts]), voxel_grid_TDF_p3, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
+  //     float pos_label = 1.0f;
+  //     float neg_label = 0.0f;
+  //     checkCUDA(__LINE__, cudaMemcpy(&(label_GPU[0][batch_idx]), &pos_label, sizeofStorageT, cudaMemcpyHostToDevice));
+  //     checkCUDA(__LINE__, cudaMemcpy(&(label_GPU[1][batch_idx]), &neg_label, sizeofStorageT, cudaMemcpyHostToDevice));
+
+  //     // Clear memory
+  //     delete [] depth_im_p1;
+  //     delete [] voxel_grid_TDF_p1;
+  //     delete [] depth_im_p2;
+  //     delete [] voxel_grid_TDF_p2;
+  //     delete [] depth_im_p3;
+  //     delete [] voxel_grid_TDF_p3;
+  //   }
+
+  // };
+  
   void prefetch() {
+	checkCUDA(__LINE__, cudaSetDevice(GPU));
+	
+    std::string p1_filename(data_path + "/" + "out.p1_tdf.bin");
+    std::ifstream p1_file(p1_filename.c_str(), std::ios::binary);
 
-    checkCUDA(__LINE__, cudaSetDevice(GPU));
+    std::string p2_filename(data_path + "/" + "out.p2_tdf.bin");
+    std::ifstream p2_file(p2_filename.c_str(), std::ios::binary);
 
+    std::string p3_filename(data_path + "/" + "out.p3_tdf.bin");
+    std::ifstream p3_file(p3_filename.c_str(), std::ios::binary);
+
+	int voxel_grid_dim = 30; // In voxels
+    int num_grid_pts = voxel_grid_dim * voxel_grid_dim * voxel_grid_dim;
     // Naming convention: p1 and p2 are matches, p1 and p3 are non-matches
     for (int batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
 
-      float * depth_im_p1 = new float[im_height * im_width];
-      float * depth_im_p2 = new float[im_height * im_width];
-      float * depth_im_p3 = new float[im_height * im_width];
-
-      float cam_K_p1[9];
-      float cam_K_p2[9];
-      float cam_K_p3[9];
-
-      std::string file_prefix_p1;
-      int p1_pix_x;
-      int p1_pix_y;
-      std::string file_prefix_p2;
-      int p2_pix_x;
-      int p2_pix_y;
-      std::string file_prefix_p3;
-      int p3_pix_x;
-      int p3_pix_y;
-
-      // Find positive correspondence p1 and p2
-      while (true) {
-
-        // Find a random scene
-        std::vector<std::string> scene_list;
-        GetFilesInDirectory(data_path, scene_list, "");
-        int rand_scene_idx = (int)round(GetRandomFloat(0.0f, (float)(scene_list.size() - 1)));
-        std::string scene_name = scene_list[rand_scene_idx];
-
-        // Find a random sequence
-        std::vector<std::string> seq_list;
-        GetFilesInDirectory(data_path + "/" + scene_name, seq_list, "seq");
-        int rand_seq_idx = (int)round(GetRandomFloat(0.0f, (float)(seq_list.size() - 1)));
-        std::string seq_name = seq_list[rand_seq_idx];
-
-        // Find a random frame
-        std::vector<std::string> frame_list_p1;
-        GetFilesInDirectory(data_path + "/" + scene_name + "/" + seq_name, frame_list_p1, ".depth.png");
-        int rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(frame_list_p1.size() - 1)));
-        std::string frame_name_p1 = frame_list_p1[rand_frame_idx];
-
-        // Pick a random pixel
-        float rand_pix_x = round(GetRandomFloat(0.0f, (float)(im_width - 1)));
-        float rand_pix_y = round(GetRandomFloat(0.0f, (float)(im_height - 1)));
-
-        // Read depth image
-        ReadDepth(data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1, im_height, im_width, depth_im_p1);
-
-        // Get camera intrinsics
-        std::string cam_K_file_p1 = data_path + "/" + scene_name + "/camera-intrinsics.txt";
-        std::vector<float> cam_K_vec_p1 = LoadMatrixFromFile(cam_K_file_p1, 3, 3);
-        std::copy(cam_K_vec_p1.begin(), cam_K_vec_p1.end(), cam_K_p1);
-
-        // Get depth at pixel. If it is zero, resample
-        float depth_val_p1 = depth_im_p1[(int)rand_pix_y * im_width + (int)rand_pix_x];
-        if (depth_val_p1 == 0)
-          continue;
-
-        // Save p1
-        file_prefix_p1 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1.substr(0, frame_name_p1.length() - 10);
-        p1_pix_x = (int)rand_pix_x;
-        p1_pix_y = (int)rand_pix_y;
-
-        // Project point to 3D camera coordinates
-        float p1_cam_z = depth_val_p1;
-        float p1_cam_x = (rand_pix_x + 0.5f - cam_K_p1[2]) * p1_cam_z / cam_K_p1[0];
-        float p1_cam_y = (rand_pix_y + 0.5f - cam_K_p1[5]) * p1_cam_z / cam_K_p1[4];
-
-        // Get extrinsics of base frame
-        std::string cam2world_file_p1 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p1.substr(0, frame_name_p1.length() - 10) + ".pose.txt";
-        std::vector<float> cam2world_p1 = LoadMatrixFromFile(cam2world_file_p1, 4, 4);
-
-        // Convert 3D point to world coordinates
-        float p1_world_x = cam2world_p1[0] * p1_cam_x + cam2world_p1[1] * p1_cam_y + cam2world_p1[2] * p1_cam_z + cam2world_p1[3];
-        float p1_world_y = cam2world_p1[4] * p1_cam_x + cam2world_p1[5] * p1_cam_y + cam2world_p1[6] * p1_cam_z + cam2world_p1[7];
-        float p1_world_z = cam2world_p1[8] * p1_cam_x + cam2world_p1[9] * p1_cam_y + cam2world_p1[10] * p1_cam_z + cam2world_p1[11];
-
-        // Get list of frames from the scene with all valid positive correspondences
-        std::vector<std::string> valid_frame_list_p2;
-        std::vector<float> valid_p2_pix_x;
-        std::vector<float> valid_p2_pix_y;
-        std::vector<float> valid_p2_depth;
-        for (int seq_idx = 0; seq_idx < seq_list.size(); seq_idx++) {
-          std::string curr_seq_name = seq_list[seq_idx];
-
-          std::vector<std::string> curr_seq_frame_list;
-          GetFilesInDirectory(data_path + "/" + scene_name + "/" + curr_seq_name, curr_seq_frame_list, ".pose.txt");
-
-          // std::cout << curr_seq_frame_list.size() << std::endl;
-          for (int frame_idx = 0; frame_idx < curr_seq_frame_list.size(); frame_idx++) {
-
-            // Get extrinsics of current frame
-            std::string curr_seq_frame_cam2world_file = data_path + "/" + scene_name + "/" + curr_seq_name + "/" + curr_seq_frame_list[frame_idx];
-            std::vector<float> curr_seq_frame_cam2world = LoadMatrixFromFile(curr_seq_frame_cam2world_file, 4, 4);
-
-            // Get camera intrinsics of current frame
-            std::string cam_K_p2_file = data_path + "/" + scene_name + "/camera-intrinsics.txt";
-            std::vector<float> cam_K_p2_vec = LoadMatrixFromFile(cam_K_p2_file, 3, 3);
-            std::copy(cam_K_p2_vec.begin(), cam_K_p2_vec.end(), cam_K_p2);
-
-            // Project p1 from world coordinates to image pixel coordinates of current frame
-            float p2_cam_xt = p1_world_x - curr_seq_frame_cam2world[3];
-            float p2_cam_yt = p1_world_y - curr_seq_frame_cam2world[7];
-            float p2_cam_zt = p1_world_z - curr_seq_frame_cam2world[11];
-            float p2_cam_x = curr_seq_frame_cam2world[0] * p2_cam_xt + curr_seq_frame_cam2world[4] * p2_cam_yt + curr_seq_frame_cam2world[8] * p2_cam_zt;
-            float p2_cam_y = curr_seq_frame_cam2world[1] * p2_cam_xt + curr_seq_frame_cam2world[5] * p2_cam_yt + curr_seq_frame_cam2world[9] * p2_cam_zt;
-            float p2_cam_z = curr_seq_frame_cam2world[2] * p2_cam_xt + curr_seq_frame_cam2world[6] * p2_cam_yt + curr_seq_frame_cam2world[10] * p2_cam_zt;
-            float proj_p2_pix_x = round((cam_K_p2[0] * (p2_cam_x / p2_cam_z) + cam_K_p2[2]) - 0.5f);
-            float proj_p2_pix_y = round((cam_K_p2[4] * (p2_cam_y / p2_cam_z) + cam_K_p2[5]) - 0.5f);
-
-            // Check if pixel coordinates are within image bounds
-            if (proj_p2_pix_x < 0 || proj_p2_pix_x >= (float)im_width || proj_p2_pix_y < 0 || proj_p2_pix_y >= (float)im_height)
-              continue;
-
-            // Check if camera location of current frame is at least 1m away from camera location of frame of p1
-            if (sqrtf((curr_seq_frame_cam2world[3] - cam2world_p1[3]) * (curr_seq_frame_cam2world[3] - cam2world_p1[3]) + 
-                      (curr_seq_frame_cam2world[7] - cam2world_p1[7]) * (curr_seq_frame_cam2world[7] - cam2world_p1[7]) + 
-                      (curr_seq_frame_cam2world[11] - cam2world_p1[11]) * (curr_seq_frame_cam2world[11] - cam2world_p1[11])) < 1.0f)
-              continue;
-
-            valid_frame_list_p2.push_back(curr_seq_frame_cam2world_file.substr(0, curr_seq_frame_cam2world_file.length() - 9));
-            valid_p2_pix_x.push_back(proj_p2_pix_x);
-            valid_p2_pix_y.push_back(proj_p2_pix_y);
-            valid_p2_depth.push_back(p2_cam_z);
-          }
-        }
-
-        if (valid_frame_list_p2.size() == 0)
-          continue;
-
-        // Pick a random positive correspondence (max: 100 tries)
-        std::string frame_name_p2;
-        for (int try_idx = 0; try_idx < 100; try_idx++) {
-          rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(valid_frame_list_p2.size() - 1)));
-          frame_name_p2 = valid_frame_list_p2[rand_frame_idx];
-
-          // Check that positive correspondence has depth in other frame
-          std::string depth_im_file_p2 = frame_name_p2 + ".depth.png";
-          ReadDepth(depth_im_file_p2, im_height, im_width, depth_im_p2);
-          float depth_val_p2 = depth_im_p2[(int)(valid_p2_pix_y[rand_frame_idx]) * im_width + (int)(valid_p2_pix_x[rand_frame_idx])];
-          if (depth_val_p2 == 0)
-            continue;
-
-          // Check that positive correspondence in world coordinates is close enough
-          if (abs(valid_p2_depth[rand_frame_idx] - depth_val_p2) > 0.03)
-            continue;
-
-          break;
-        }
-
-        // Set positive correspondence point as p2
-        file_prefix_p2 = frame_name_p2;
-        p2_pix_x = (int)(valid_p2_pix_x[rand_frame_idx]);
-        p2_pix_y = (int)(valid_p2_pix_y[rand_frame_idx]);
-        break;
-      }
-
-      // Find a negative correspondence p3
-      while (true) {
-
-        // Find a random scene
-        std::vector<std::string> scene_list;
-        GetFilesInDirectory(data_path, scene_list, "");
-        int rand_scene_idx = (int)round(GetRandomFloat(0.0f, (float)(scene_list.size() - 1)));
-        std::string scene_name = scene_list[rand_scene_idx];
-
-        // Find a random sequence
-        std::vector<std::string> seq_list;
-        GetFilesInDirectory(data_path + "/" + scene_name, seq_list, "seq");
-        int rand_seq_idx = (int)round(GetRandomFloat(0.0f, (float)(seq_list.size() - 1)));
-        std::string seq_name = seq_list[rand_seq_idx];
-
-        // Find a random frame
-        std::vector<std::string> frame_list_p3;
-        GetFilesInDirectory(data_path + "/" + scene_name + "/" + seq_name, frame_list_p3, ".depth.png");
-        int rand_frame_idx = (int)round(GetRandomFloat(0.0f, (float)(frame_list_p3.size() - 1)));
-        std::string frame_name_p3 = frame_list_p3[rand_frame_idx];
-
-        // Pick a random pixel
-        float rand_p3_pix_x = round(GetRandomFloat(0.0f, (float)(im_width - 1)));
-        float rand_p3_pix_y = round(GetRandomFloat(0.0f, (float)(im_height - 1)));
-
-        // Read depth image
-        ReadDepth(data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p3, im_height, im_width, depth_im_p3);
-
-        // Get camera intrinsics
-        std::string cam_K_p3_file = data_path + "/" + scene_name + "/camera-intrinsics.txt";
-        std::vector<float> cam_K_p3_vec = LoadMatrixFromFile(cam_K_p3_file, 3, 3);
-        std::copy(cam_K_p3_vec.begin(), cam_K_p3_vec.end(), cam_K_p3);
-
-        // Get depth at pixel. If it is zero, resample
-        float depth_val_p3 = depth_im_p3[(int)rand_p3_pix_y * im_width + (int)rand_p3_pix_x];
-        if (depth_val_p3 == 0)
-          continue;
-
-        // Set negative correspondence point as p3
-        file_prefix_p3 = data_path + "/" + scene_name + "/" + seq_name + "/" + frame_name_p3.substr(0, frame_name_p3.length() - 10);
-        p3_pix_x = (int)rand_p3_pix_x;
-        p3_pix_y = (int)rand_p3_pix_y;
-        break;
-      }
-
-      // For debugging
-      // std::cout << file_prefix_p1 << " " << p1_pix_x << " " << p1_pix_y << std::endl;
-      // std::cout << file_prefix_p2 << " " << p2_pix_x << " " << p2_pix_y << std::endl;
-      // std::cout << file_prefix_p3 << " " << p3_pix_x << " " << p3_pix_y << std::endl << std::endl;
-
-      std::string depth_im_file_p1 = file_prefix_p1 + ".depth.png";
-      std::string cam_pose_file_p1 = file_prefix_p1 + ".pose.txt";
-      std::string depth_im_file_p2 = file_prefix_p2 + ".depth.png";
-      std::string cam_pose_file_p2 = file_prefix_p2 + ".pose.txt";
-      std::string depth_im_file_p3 = file_prefix_p3 + ".depth.png";
-      std::string cam_pose_file_p3 = file_prefix_p3 + ".pose.txt";
-
-      // Convert depth image to row-major array
-      ReadDepth(depth_im_file_p1, im_height, im_width, depth_im_p1);
-
-      // TDF voxel grid parameters
-      int voxel_grid_dim = 30; // In voxels
-      float voxel_size = 0.01f; // In meters
-      float trunc_margin = 5 * voxel_size;
-      int num_grid_pts = voxel_grid_dim * voxel_grid_dim * voxel_grid_dim;
-
-      // Compute TDF voxel grid around p1
+	  // Read TDF voxel grid around point p1
       float * voxel_grid_TDF_p1 = new float[num_grid_pts];
-      GetLocalPointvoxel_grid_TDF(p1_pix_x, p1_pix_y, cam_K_p1, depth_im_p1, im_height, im_width, voxel_grid_TDF_p1, voxel_grid_dim, voxel_size, trunc_margin);
-
-      // For debugging
-      // FILE *fp = fopen("debugBaseMatch.txt", "w");
-      // int iret = fprintf(fp, "path:%s x:%d y:%d\n",baseFramePrefix.c_str(),corresBasePointX[match_idx],corresBasePointY[match_idx]);
-      // for (int i = 0; i < num_grid_pts; ++i)
-      //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p1[i]);
-      // fclose(fp);
-
-      // Compute TDF voxel grid around p2
-      // float * depth_im_p2 = new float[im_height * im_width];
-      ReadDepth(depth_im_file_p2, im_height, im_width, depth_im_p2);
+      // std::cout << "Reading TDF values for p1..." << std::endl;
+      p1_file.read((char*)voxel_grid_TDF_p1, sizeof(float) * num_grid_pts);
+      
+      // Read TDF voxel grid around point p1
       float * voxel_grid_TDF_p2 = new float[num_grid_pts];
-      GetLocalPointvoxel_grid_TDF(p2_pix_x, p2_pix_y, cam_K_p2, depth_im_p2, im_height, im_width, voxel_grid_TDF_p2, voxel_grid_dim, voxel_size, trunc_margin);
+      // std::cout << "Reading TDF values for p2..." << std::endl;
+      p2_file.read((char*)voxel_grid_TDF_p2, sizeof(float) * num_grid_pts);
 
-      // fp = fopen("debugPosMatch.txt", "w");
-      // iret = fprintf(fp, "path:%s x:%d y:%d\n",posFramePrefix.c_str(),corresPosPointX[match_idx],corresPosPointY[match_idx]);
-      // for (int i = 0; i < num_grid_pts; ++i)
-      //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p2[i]);
-      // fclose(fp);
-
-      // Compute TDF voxel grid around p3
-      ReadDepth(depth_im_file_p3, im_height, im_width, depth_im_p3);
+      // Read TDF voxel grid around p3
       float * voxel_grid_TDF_p3 = new float[num_grid_pts];
-      GetLocalPointvoxel_grid_TDF(p3_pix_x, p3_pix_y, cam_K_p3, depth_im_p3, im_height, im_width, voxel_grid_TDF_p3, voxel_grid_dim, voxel_size, trunc_margin);
-
-      // fp = fopen("debugNegMatch.txt", "w");
-      // iret = fprintf(fp, "path:%s x:%d y:%d\n",negFramePrefix.c_str(),corresNegPointX[match_idx],corresNegPointY[match_idx]);
-      // for (int i = 0; i < num_grid_pts; ++i)
-      //     iret = fprintf(fp, "%f\n",voxel_grid_TDF_p3[i]);
-      // fclose(fp);
+      // std::cout << "Reading TDF values for p3..." << std::endl;
+      p3_file.read((char*)voxel_grid_TDF_p3, sizeof(float) * num_grid_pts);
 
       // Copy to data response
       checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[0][batch_idx * num_grid_pts]), voxel_grid_TDF_p1, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
@@ -513,14 +568,14 @@ public:
       checkCUDA(__LINE__, cudaMemcpy(&(label_GPU[1][batch_idx]), &neg_label, sizeofStorageT, cudaMemcpyHostToDevice));
 
       // Clear memory
-      delete [] depth_im_p1;
       delete [] voxel_grid_TDF_p1;
-      delete [] depth_im_p2;
       delete [] voxel_grid_TDF_p2;
-      delete [] depth_im_p3;
       delete [] voxel_grid_TDF_p3;
-    }
+	}
 
+    p1_file.close();
+    p2_file.close();
+    p3_file.close();
   };
 
   void forward(Phase phase_) {
