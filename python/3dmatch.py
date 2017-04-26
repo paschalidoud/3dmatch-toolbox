@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 from keras.layers import Activation, Conv3D, MaxPooling3D, Input, \
-                         Flatten
+                         Flatten, Lambda
 from keras.models import Sequential
 from keras import backend as K
 
@@ -14,6 +14,9 @@ from keras import backend as K
 def euclidean_distance(D1, D2):
     return K.sqrt(K.sum(K.square(D1 - D2), axis=1))
 
+
+def euclidean_distance_output_shape(input_shape):
+    return (None, 1)
 
 def create_network(input_shape):
     model = Sequential([
@@ -44,6 +47,12 @@ def create_network(input_shape):
 
     D1 = model(p1)
     D2 = model(p2)
+
+    distance_layer = Lambda(
+        euclidean_distance,
+        output_shape=euclidean_distance_output_shape
+    )
+    distances = distance_layer([D1, D2])
 
     return model
 
