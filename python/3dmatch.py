@@ -105,6 +105,9 @@ def main(argv):
         weight_file=args.weight_file
     )
 
+    model.predict(p1)
+    training_model.predict([p1, p2])
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
