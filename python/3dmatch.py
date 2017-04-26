@@ -7,8 +7,9 @@ import sys
 import numpy as np
 from keras.layers import Activation, Conv3D, MaxPooling3D, Input, \
                          Flatten, Lambda
-from keras.models import Sequential
+from keras.models import Sequential, Model
 from keras import backend as K
+from keras.optimizers import Adam
 
 
 def euclidean_distance(D1, D2):
@@ -18,7 +19,17 @@ def euclidean_distance(D1, D2):
 def euclidean_distance_output_shape(input_shape):
     return (None, 1)
 
-def create_network(input_shape):
+
+def contrastive_loss(y_true, y_pred):
+    '''Contrastive loss from Hadsell-et-al.'06
+       http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+       '''
+       margin = 1
+       return K.mean(y_true * K.square(y_pred) +
+               (1 - y_true) * K.square(K.maximum(margin - y_pred, 0)))
+
+
+def create_network(input_shape, weight_file=None):
     model = Sequential([
        Conv3D(64, 3, input_shape=input_shape),
        Activation("relu"),
@@ -43,7 +54,6 @@ def create_network(input_shape):
 
     p1 = Input(shape=(30, 30, 30, 1))
     p2 = Input(shape=(30, 30, 30, 1))
-    label = Input(shape=(1,))
 
     D1 = model(p1)
     D2 = model(p2)
@@ -54,9 +64,23 @@ def create_network(input_shape):
     )
     distances = distance_layer([D1, D2])
 
-    training_model = model(inputs=[p1, p2, label], outputs=distances)
+    training_model = Model(inputs=[p1, p2], outputs=distances)
 
-    return model
+    optimizer = Adam(lr=0.001)
+    training_model.compile(
+        loss=contrastive_loss,
+        optimizer=optimizer
+    )
+
+    model.compile(
+        loss="mse",
+        optimizer=optimizer
+    )
+
+    if weight_file:
+        training_model.load_weights(weight_file, by_name=True)
+
+    return training_model, model
 
 
 if __name__ == "__main__":
