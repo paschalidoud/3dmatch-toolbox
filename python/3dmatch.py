@@ -84,3 +84,23 @@ def create_network(input_shape, weight_file=None):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train a 3DMatch network"
+    )
+
+    parser.add_argument(
+        "--weight_file",
+        help="An initial weights file"
+    )
+    args = parser.parse_args(argv)
+
+    input_shape = (30, 30, 30, 1)
+    p1 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
+    p2 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
+    p3 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
+
+    training_model, model = create_network(
+        input_shape,
+        weight_file=args.weight_file
+    )
+
