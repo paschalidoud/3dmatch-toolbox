@@ -11,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 #include "utils.hpp"
+#include <time.h>
 
 // CUDA kernel function: for each voxel center of the voxel grid, find nearest neighbor distance to the surface point cloud
 __global__
@@ -528,36 +529,76 @@ public:
   
   void prefetch() {
 	checkCUDA(__LINE__, cudaSetDevice(GPU));
-	
-    std::string p1_filename(data_path + "/" + "out.p1_tdf.bin");
-    std::ifstream p1_file(p1_filename.c_str(), std::ios::binary);
 
-    std::string p2_filename(data_path + "/" + "out.p2_tdf.bin");
-    std::ifstream p2_file(p2_filename.c_str(), std::ios::binary);
+    std::vector<std::string> p1_pointclouds_list;
+    GetFilesInDirectory(data_path, p1_pointclouds_list, "filtered.p1_tdf.bin");
+    std::sort(p1_pointclouds_list.begin(), p1_pointclouds_list.end());
 
-    std::string p3_filename(data_path + "/" + "out.p3_tdf.bin");
-    std::ifstream p3_file(p3_filename.c_str(), std::ios::binary);
+    std::vector<std::string> p2_pointclouds_list;
+    GetFilesInDirectory(data_path, p2_pointclouds_list, "filtered.p2_tdf.bin");
+    std::sort(p2_pointclouds_list.begin(), p2_pointclouds_list.end());
+
+    std::vector<std::string> p3_pointclouds_list;
+    GetFilesInDirectory(data_path, p3_pointclouds_list, "filtered.p3_tdf.bin");
+    std::sort(p3_pointclouds_list.begin(), p3_pointclouds_list.end());
 
 	int voxel_grid_dim = 30; // In voxels
     int num_grid_pts = voxel_grid_dim * voxel_grid_dim * voxel_grid_dim;
     // Naming convention: p1 and p2 are matches, p1 and p3 are non-matches
     for (int batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+      
+      srand(time(NULL));
+      int random_idx = rand() % p1_pointclouds_list.size();
+      //std::cout << "Random:" << random_idx << std::endl;
+      //std::cout << p1_pointclouds_list[random_idx] << std::endl; 
+      //std::cout << p2_pointclouds_list[random_idx] << std::endl; 
+      //std::cout << p3_pointclouds_list[random_idx] << std::endl; 
+
+      std::string p1_filename(data_path + "/" + p1_pointclouds_list.at(random_idx));
+      //std::string p1_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p1_tdf.bin");
+      std::ifstream p1_file(p1_filename.c_str(), std::ios::binary);
+
+      std::string p2_filename(data_path + "/" + p2_pointclouds_list.at(random_idx));
+      //std::string p2_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p2_tdf.bin");
+      std::ifstream p2_file(p2_filename.c_str(), std::ios::binary);
+
+      std::string p3_filename(data_path + "/" + p3_pointclouds_list.at(random_idx));
+      //std::string p3_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p3_tdf.bin");
+      std::ifstream p3_file(p3_filename.c_str(), std::ios::binary);
 
 	  // Read TDF voxel grid around point p1
       float * voxel_grid_TDF_p1 = new float[num_grid_pts];
       // std::cout << "Reading TDF values for p1..." << std::endl;
       p1_file.read((char*)voxel_grid_TDF_p1, sizeof(float) * num_grid_pts);
+      float sum = 0.0;
+      for(int i=0; i< num_grid_pts; i++) {
+        sum += voxel_grid_TDF_p1[i];
+      }
+      if (sum<=0)
+        std::cout << "In batch:" << batch_idx << " file:" << p1_filename << " " << sum << std::endl;
       
       // Read TDF voxel grid around point p1
       float * voxel_grid_TDF_p2 = new float[num_grid_pts];
       // std::cout << "Reading TDF values for p2..." << std::endl;
       p2_file.read((char*)voxel_grid_TDF_p2, sizeof(float) * num_grid_pts);
+      sum = 0.0;
+      for(int i=0; i< num_grid_pts; i++) {
+        sum += voxel_grid_TDF_p2[i];
+      }
+      if (sum <=0)
+        std::cout << "In batch:" << batch_idx << " file:" << p2_filename << " " << sum<< std::endl;
 
       // Read TDF voxel grid around p3
       float * voxel_grid_TDF_p3 = new float[num_grid_pts];
       // std::cout << "Reading TDF values for p3..." << std::endl;
       p3_file.read((char*)voxel_grid_TDF_p3, sizeof(float) * num_grid_pts);
 
+      sum = 0.0;
+      for(int i=0; i< num_grid_pts; i++) {
+        sum += voxel_grid_TDF_p3[i];
+      }
+      if (sum <= 0)
+        std::cout << "In batch:" << batch_idx << " file:" << p3_filename << " " << sum << std::endl;
       // Copy to data response
       checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[0][batch_idx * num_grid_pts]), voxel_grid_TDF_p1, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
       checkCUDA(__LINE__, cudaMemcpy(&(data_GPU[1][batch_idx * num_grid_pts]), voxel_grid_TDF_p2, num_grid_pts * sizeofStorageT, cudaMemcpyHostToDevice));
@@ -573,9 +614,9 @@ public:
       delete [] voxel_grid_TDF_p3;
 	}
 
-    p1_file.close();
-    p2_file.close();
-    p3_file.close();
+    //p1_file.close();
+    //p2_file.close();
+    //p3_file.close();
   };
 
   void forward(Phase phase_) {
