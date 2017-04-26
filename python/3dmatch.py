@@ -12,7 +12,9 @@ from keras import backend as K
 from keras.optimizers import Adam
 
 
-def euclidean_distance(D1, D2):
+def euclidean_distance(D):
+    D1 = D[0]
+    D2 = D[1]
     return K.sqrt(K.sum(K.square(D1 - D2), axis=1))
 
 
@@ -22,11 +24,11 @@ def euclidean_distance_output_shape(input_shape):
 
 def contrastive_loss(y_true, y_pred):
     '''Contrastive loss from Hadsell-et-al.'06
-       http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
-       '''
-       margin = 1
-       return K.mean(y_true * K.square(y_pred) +
-               (1 - y_true) * K.square(K.maximum(margin - y_pred, 0)))
+    http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+    '''
+    margin = 1
+    return K.mean(y_true * K.square(y_pred) +
+            (1 - y_true) * K.square(K.maximum(margin - y_pred, 0)))
 
 
 def create_network(input_shape, weight_file=None):
@@ -83,7 +85,7 @@ def create_network(input_shape, weight_file=None):
     return training_model, model
 
 
-if __name__ == "__main__":
+def main(argv):
     parser = argparse.ArgumentParser(
         description="Train a 3DMatch network"
     )
@@ -97,10 +99,12 @@ if __name__ == "__main__":
     input_shape = (30, 30, 30, 1)
     p1 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
     p2 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
-    p3 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
 
     training_model, model = create_network(
         input_shape,
         weight_file=args.weight_file
     )
 
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
