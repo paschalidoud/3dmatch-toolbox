@@ -12,10 +12,10 @@
 			"lr_stepsize":10000000,
 			"max_iter": 10000000,
 			"train_iter": 1,
-			"snapshot_iter": 1000,
+			"snapshot_iter": 100,
 			"display_iter": 1,
 			"test_iter": 1,
-			"test_interval": 1000,
+			"test_interval": 10,
 			"debug_mode": false,
 			"GPU_solver": 0,
 			"GPU": [0]
