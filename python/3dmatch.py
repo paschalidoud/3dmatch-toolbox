@@ -54,6 +54,8 @@ def create_network(input_shape):
     )
     distances = distance_layer([D1, D2])
 
+    training_model = model(inputs=[p1, p2, label], outputs=distances)
+
     return model
 
 
