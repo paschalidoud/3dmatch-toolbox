@@ -305,8 +305,6 @@ int main(int argc, char *argv[]) {
       i += 3;
     }
   }
-  // This is to read ply files that are in binary format
-  //pointcloud_file.read((char*)pts, sizeof(float) * num_pts * 3);
   corresponding_pointcloud_file.close();
   std::cout << "Loaded corresponding point cloud with " << num_pts_corresponding << " points!" << std::endl;
 
