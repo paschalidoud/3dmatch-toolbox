@@ -542,29 +542,30 @@ public:
     GetFilesInDirectory(data_path, p3_pointclouds_list, "filtered.p3_tdf.bin");
     std::sort(p3_pointclouds_list.begin(), p3_pointclouds_list.end());
 
+    srand(0);
 	int voxel_grid_dim = 30; // In voxels
     int num_grid_pts = voxel_grid_dim * voxel_grid_dim * voxel_grid_dim;
     // Naming convention: p1 and p2 are matches, p1 and p3 are non-matches
     for (int batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
       
-      srand(time(NULL));
       int random_idx = rand() % p1_pointclouds_list.size();
-      //std::cout << "Random:" << random_idx << std::endl;
-      //std::cout << p1_pointclouds_list[random_idx] << std::endl; 
-      //std::cout << p2_pointclouds_list[random_idx] << std::endl; 
-      //std::cout << p3_pointclouds_list[random_idx] << std::endl; 
+      // We have 100 points in each file
+      int random_offset = (rand() % 99)*27000;
 
       std::string p1_filename(data_path + "/" + p1_pointclouds_list.at(random_idx));
       //std::string p1_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p1_tdf.bin");
       std::ifstream p1_file(p1_filename.c_str(), std::ios::binary);
+      p1_file.seekg(random_offset);
 
       std::string p2_filename(data_path + "/" + p2_pointclouds_list.at(random_idx));
       //std::string p2_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p2_tdf.bin");
       std::ifstream p2_file(p2_filename.c_str(), std::ios::binary);
+      p2_file.seekg(random_offset);
 
       std::string p3_filename(data_path + "/" + p3_pointclouds_list.at(random_idx));
       //std::string p3_filename(data_path + "/" + "gt_2011_09_26_drive_0002_filtered.p3_tdf.bin");
       std::ifstream p3_file(p3_filename.c_str(), std::ios::binary);
+      p3_file.seekg(random_offset);
 
 	  // Read TDF voxel grid around point p1
       float * voxel_grid_TDF_p1 = new float[num_grid_pts];
