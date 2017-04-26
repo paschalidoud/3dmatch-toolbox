@@ -12,7 +12,7 @@ from keras import backend as K
 
 
 def euclidean_distance(D1, D2):
-    return K.sqrt(K.square(D1 - D2).sum(axis=1))
+    return K.sqrt(K.sum(K.square(D1 - D2), axis=1))
 
 
 def create_network(input_shape):
