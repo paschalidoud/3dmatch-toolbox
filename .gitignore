@@ -12,3 +12,5 @@
 /training/marvin
 /data_parsing/parse_point_clouds
 /data
+*.pyc
+*.py.swp
