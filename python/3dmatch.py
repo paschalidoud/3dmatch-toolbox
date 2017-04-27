@@ -2,6 +2,7 @@
 """Train a 3DMatch network
 """
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -11,6 +12,41 @@ from keras.models import Sequential, Model
 from keras import backend as K
 from keras.optimizers import Adam
 
+
+def generate_batches(input_directory, batch_size):
+    p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
+    p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
+    p3 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p3_tdf.bin")]
+
+    tdf_grid_dimensions = 30*30*30
+
+    P1 = np.empty((1, tdf_grid_dimensions), dtype=np.float32)
+    P2 = np.empty((1, tdf_grid_dimensions), dtype=np.float32)
+    # Choose a random index and a random offset to read from the input directory
+    for idx in range(batch_size):
+        random_idx = np.random.randint(0, len(p1))
+        random_offset = np.random.randint(0, 100)
+
+        f1 = open(p1[random_idx])
+        f1.seek(random_offset * 4 * tdf_grid_dimensions)
+        d1 = np.fromfile(f1, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+
+        f2 = open(p2[random_idx])
+        f2.seek(random_offset * 4 * tdf_grid_dimensions)
+        d2 = np.fromfile(f2, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+
+        f3 = open(p3[random_idx])
+        f3.seek(random_offset * 4 * tdf_grid_dimensions)
+        d3 = np.fromfile(f3, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+
+        # Add the reference point
+        P1 = np.vstack((P1, d1))
+        P1 = np.vstack((P1, d1))
+        # Add the matching point and the non-matching point
+        P2 = np.vstack((P2, d2))
+        P2 = np.vstack((P2, d3))
+
+    yield P1.reshape((-1, 30, 30, 30, 30, 1)), P2.reshape((-1, 30, 30, 30, 1)) 
 
 def euclidean_distance(D):
     D1 = D[0]
@@ -91,8 +127,27 @@ def main(argv):
     )
 
     parser.add_argument(
+        "training_directory", 
+        help="Directory containing the data used for training"
+    )
+    parser.add_argument(
+        "testing_directory", 
+        help="Directory containing the data used for testing"
+    )
+    parser.add_argument(
+        "--batch_size",
+        default=128,
+        help="The batch size to be used"
+    )
+    parser.add_argument(
         "--weight_file",
         help="An initial weights file"
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1000,
+        help="Number of epochs"
     )
     args = parser.parse_args(argv)
 
@@ -105,8 +160,13 @@ def main(argv):
         weight_file=args.weight_file
     )
 
-    model.predict(p1)
-    training_model.predict([p1, p2])
+    #model.predict(p1)
+    #training_model.predict([p1, p2])
+
+    training_model.fit_generator(
+        generate_batches(args.training_directory, args.batch_size),
+        epochs=100
+    )
 
 
 if __name__ == "__main__":
