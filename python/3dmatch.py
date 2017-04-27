@@ -6,12 +6,24 @@ import os
 import sys
 
 import numpy as np
+from keras.callbacks import Callback, ModelCheckpoint
 from keras.layers import Activation, Conv3D, MaxPooling3D, Input, \
                          Flatten, Lambda
 from keras.models import Sequential, Model
 from keras import backend as K
 from keras.optimizers import Adam
 
+import pickle
+
+import utils
+
+#from theano.compile.nanguardmode import NanGuardMode
+class LossHistory(Callback):
+    def on_train_begin(self, logs={}):
+        self.losses = []
+
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
 
 def generate_batches(input_directory, batch_size):
     p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
@@ -34,14 +46,20 @@ def generate_batches(input_directory, batch_size):
             f1 = open(os.path.join(input_directory, p1[random_idx]))
             f1.seek(random_offset * 4 * tdf_grid_dimensions)
             d1 = np.fromfile(f1, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+            if np.sum(d1) == 0.0:
+                assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p1[random_idx]),)
 
             f2 = open(os.path.join(input_directory, p2[random_idx]))
             f2.seek(random_offset * 4 * tdf_grid_dimensions)
             d2 = np.fromfile(f2, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+            if np.sum(d2)==0.0:
+                assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p2[random_idx]),)
 
             f3 = open(os.path.join(input_directory, p3[random_idx]))
             f3.seek(random_offset * 4 * tdf_grid_dimensions)
             d3 = np.fromfile(f3, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+            if np.sum(d3)==0.0:
+                assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p3[random_idx]),)
 
             # Add the reference point
             P1 = np.vstack((P1, d1))
@@ -61,7 +79,7 @@ def generate_batches(input_directory, batch_size):
 def euclidean_distance(D):
     D1 = D[0]
     D2 = D[1]
-    return K.sqrt(K.sum(K.square(D1 - D2), axis=1))
+    return K.sqrt(K.sum(K.square(D1 - D2), axis=1) + K.epsilon())
 
 
 def euclidean_distance_output_shape(input_shape):
@@ -77,7 +95,7 @@ def contrastive_loss(y_true, y_pred):
             (1 - y_true) * K.square(K.maximum(margin - y_pred, 0)))
 
 
-def create_network(input_shape, weight_file=None):
+def create_network(input_shape, weight_file=None, lr=0.001):
     model = Sequential([
        Conv3D(64, 3, input_shape=input_shape),
        Activation("relu"),
@@ -102,6 +120,8 @@ def create_network(input_shape, weight_file=None):
 
     p1 = Input(shape=(30, 30, 30, 1))
     p2 = Input(shape=(30, 30, 30, 1))
+    #p1 = Input(shape=(1, 30, 30, 30))
+    #p2 = Input(shape=(1, 30, 30, 30))
 
     D1 = model(p1)
     D2 = model(p2)
@@ -114,10 +134,11 @@ def create_network(input_shape, weight_file=None):
 
     training_model = Model(inputs=[p1, p2], outputs=distances)
 
-    optimizer = Adam(lr=0.001)
+    optimizer = Adam(lr=lr)
     training_model.compile(
         loss=contrastive_loss,
         optimizer=optimizer
+        #mode=NanGuardMode(nan_is_error=True, inf_is_error=False, big_is_error=False)
     )
 
     model.compile(
@@ -146,7 +167,8 @@ def main(argv):
     )
     parser.add_argument(
         "--batch_size",
-        default=128,
+        type=int,
+        default=64,
         help="The batch size to be used"
     )
     parser.add_argument(
@@ -165,26 +187,48 @@ def main(argv):
         default=5000,
         help="Total number of batches of samples"
     )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=0.001
+    )
+    parser.add_argument(
+        "--n_test_samples",
+        type=int,
+        default=16000,
+        help="Number of samples used in the validation set"
+    )
+
+
     args = parser.parse_args(argv)
 
     input_shape = (30, 30, 30, 1)
-    p1 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
-    p2 = np.random.random((10, input_shape[0], input_shape[1], input_shape[2], input_shape[3]))
+    #input_shape = (1, 30, 30, 30)
 
     training_model, model = create_network(
         input_shape,
-        weight_file=args.weight_file
+        weight_file=args.weight_file,
+        lr=args.learning_rate
     )
 
-    #model.predict(p1)
-    #training_model.predict([p1, p2])
+    #X_train, y = utils.generate_batch(args.training_directory, args.batch_size)
+    #for i in range(100):
+    #    loss = training_model.train_on_batch( X_train, y)
+    #    print loss
 
+    history = LossHistory()
+    checkpointer = ModelCheckpoint(filepath="/tmp/weights.hdf5", verbose=0)
     training_model.fit_generator(
         generate_batches(args.training_directory, args.batch_size),
         args.steps_per_epoch,
         epochs=args.epochs,
-        verbose=2
+        verbose=1,
+        validation_data=generate_batches(args.testing_directory, args.batch_size),
+        validation_steps=3000,
+        callbacks=[history, checkpointer]
     )
+    with open("/tmp/losses.txt", "wb+") as out:
+        history.losses.astype(np.float32).tofile(out)
 
 
 if __name__ == "__main__":
