@@ -25,6 +25,57 @@ class LossHistory(Callback):
     def on_batch_end(self, batch, logs={}):
         self.losses.append(logs.get('loss'))
 
+def generate_validation(input_directory, n_samples=1000):
+    p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
+    p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
+    p3 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p3_tdf.bin")]
+
+    tdf_grid_dimensions = 30*30*30
+
+    P1 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
+    P2 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
+    labels = []
+    # Choose a random index and a random offset to read from the input directory
+    for idx in range(n_samples):
+        random_idx = np.random.randint(0, len(p1))
+        random_offset = np.random.randint(0, 100)
+        #print idx,"/", batch_size
+
+        f1 = open(os.path.join(input_directory, p1[random_idx]))
+        f1.seek(random_offset * 4 * tdf_grid_dimensions)
+        d1 = np.fromfile(f1, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+        if np.sum(d1) == 0.0:
+            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p1[random_idx]),)
+
+        f2 = open(os.path.join(input_directory, p2[random_idx]))
+        f2.seek(random_offset * 4 * tdf_grid_dimensions)
+        d2 = np.fromfile(f2, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+        if np.sum(d2)==0.0:
+            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p2[random_idx]),)
+
+        f3 = open(os.path.join(input_directory, p3[random_idx]))
+        f3.seek(random_offset * 4 * tdf_grid_dimensions)
+        d3 = np.fromfile(f3, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
+        if np.sum(d3)==0.0:
+            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p3[random_idx]),)
+
+        # Add the reference point
+        P1 = np.vstack((P1, d1))
+        P1 = np.vstack((P1, d1))
+        labels.append(1)
+        # Add the matching point and the non-matching point
+        P2 = np.vstack((P2, d2))
+        P2 = np.vstack((P2, d3))
+        labels.append(0)
+
+        f1.close()
+        f2.close()
+        f3.close()
+
+    print "Validation set with %d samples created" %(n_samples,)
+
+    return [[P1.reshape((-1, 30, 30, 30, 1)), P2.reshape((-1, 30, 30, 30, 1))], np.array(labels)]
+
 def generate_batches(input_directory, batch_size):
     p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
     p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
@@ -195,7 +246,7 @@ def main(argv):
     parser.add_argument(
         "--n_test_samples",
         type=int,
-        default=16000,
+        default=1000,
         help="Number of samples used in the validation set"
     )
 
@@ -217,18 +268,17 @@ def main(argv):
     #    print loss
 
     history = LossHistory()
-    checkpointer = ModelCheckpoint(filepath="/tmp/weights.hdf5", verbose=0)
+    checkpointer = ModelCheckpoint(filepath="/tmp/weights.{epoch:02d}.hdf5", verbose=0)
     training_model.fit_generator(
         generate_batches(args.training_directory, args.batch_size),
         args.steps_per_epoch,
         epochs=args.epochs,
         verbose=1,
-        validation_data=generate_batches(args.testing_directory, args.batch_size),
-        validation_steps=3000,
+        validation_data=generate_validation(args.testing_directory, args.n_test_samples),
         callbacks=[history, checkpointer]
     )
     with open("/tmp/losses.txt", "wb+") as out:
-        history.losses.astype(np.float32).tofile(out)
+        np.array(history.losses).astype(np.float32).tofile(out)
 
 
 if __name__ == "__main__":
