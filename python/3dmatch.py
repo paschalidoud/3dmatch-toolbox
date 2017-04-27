@@ -27,6 +27,7 @@ def generate_batches(input_directory, batch_size):
     for idx in range(batch_size):
         random_idx = np.random.randint(0, len(p1))
         random_offset = np.random.randint(0, 100)
+        #print idx,"/", batch_size
 
         f1 = open(os.path.join(input_directory, p1[random_idx]))
         f1.seek(random_offset * 4 * tdf_grid_dimensions)
@@ -156,6 +157,12 @@ def main(argv):
         default=1000,
         help="Number of epochs"
     )
+    parser.add_argument(
+        "--steps_per_epoch",
+        type=int,
+        default=5000,
+        help="Total number of batches of samples"
+    )
     args = parser.parse_args(argv)
 
     input_shape = (30, 30, 30, 1)
@@ -172,8 +179,8 @@ def main(argv):
 
     training_model.fit_generator(
         generate_batches(args.training_directory, args.batch_size),
-        894100/args.batch_size,
-        epochs=100,
+        args.steps_per_epoch,
+        epochs=args.epochs,
         verbose=2
     )
 
