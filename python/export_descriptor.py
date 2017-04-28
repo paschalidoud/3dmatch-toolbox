@@ -3,28 +3,30 @@
 extract each descriptors
 """
 import argparse
+import gzip
 import os
 import sys
 
 import numpy as np
 
-from threedmatch import create_network
+#from threedmatch import create_network
 
 
 def parse_tdf_grid_from_file(tdf_grid_file):
-   f = open(tdf_grid_file, "rb") 
-   origin_x = np.fromfile(f, count=1, dtype=np.float32)
-   origin_y = np.fromfile(f, count=1, dtype=np.float32)
-   origin_z = np.fromfile(f, count=1, dtype=np.float32)
+   f = gzip.open(tdf_grid_file, "rb")
+   origin_x = np.fromstring(f.read(4), dtype=np.float32)
+   origin_y = np.fromstring(f.read(4), dtype=np.float32)
+   origin_z = np.fromstring(f.read(4), dtype=np.float32)
 
-   dim_x = np.fromfile(f, count=1, dtype=np.int32)
-   dim_y = np.fromfile(f, count=1, dtype=np.int32)
-   dim_z = np.fromfile(f, count=1, dtype=np.int32)
+   dim_x = np.fromstring(f.read(4), dtype=np.int32)
+   dim_y = np.fromstring(f.read(4), dtype=np.int32)
+   dim_z = np.fromstring(f.read(4), dtype=np.int32)
 
-   pointer = np.fromfile(f, count=1, dtype=np.float32)
+   pointer = np.fromstring(f.read(8), dtype=np.int64)
 
-   grid = np.fromfile(f, count=dim_x*dim_y*dim_z, dtype=np.float32)
+   grid = np.fromstring(f.read(8*dim_x[0]*dim_y[0]*dim_z[0]), dtype=np.float32)
 
+   f.close()
    return origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid
 
 
@@ -48,7 +50,8 @@ def generate_tdf_voxel_grid(point, grid, dim_x, dim_y, dim_z, input_shape):
             for x in range(x_start, x_stop, 1):
                 tdf_voxel_grid.append(grid[z * dim_x * dim_y + y * dim_x + x])
 
-    return np.array(tdf_voxel_grid).reshape(input_shape)
+                print grid[z * dim_x * dim_y + y * dim_x + x]
+    return np.array(tdf_voxel_grid).reshape(-1, 30, 30, 30, 1)
 
 
 def main(argv):
@@ -99,15 +102,18 @@ def main(argv):
         args.voxel_size
     )
     
-    p = generate_tdf_voxel_grid(points_grid[0], grid, dim_x, dim_y, dim_z, input_shape).shape
+    p = generate_tdf_voxel_grid(points_grid[0], grid, dim_x, dim_y, dim_z, input_shape)
 
-    training_model, model = create_network(
-        input_shape,
-        weight_file=args.weight_file,
-        lr=args.learning_rate
-    )
-    desc = training_model.predict(p)
-    print desc
+    #training_model, model = create_network(
+    #    input_shape,
+    #    weight_file=args.weight_file,
+    #    lr=args.learning_rate
+    #)
+    #desc = model.predict(p)
+    print points[0]
+    print points_grid[0]
+    print "p:", p
+    #print "desc:",desc
 
 if __name__ == "__main__":
     main(sys.argv[1:])
