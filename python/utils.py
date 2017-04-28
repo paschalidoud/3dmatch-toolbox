@@ -57,7 +57,7 @@ def convert_points_to_grid(tdf_filename, points_filename, voxel_size=0.1):
         voxel_size
     )
 
-    return points_grid
+    return points_grid, dim_x, dim_y, dim_z
 
     
 def generate_batch(input_directory, batch_size):

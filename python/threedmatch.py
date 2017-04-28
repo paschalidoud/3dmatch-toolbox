@@ -27,10 +27,25 @@ class LossHistory(Callback):
 
 
 def generate_data(input_directory, bacth_size):
-    reference_tdfs = [x for x in sorted(os.listdir(os.path.join(input_directory, "reference"))) if x.endswith(".gz")]
-    projected_tdfs = [x for x in sorted(os.listdir(os.path.join(input_directory, "projected"))) if x.endswith(".gz")]
-    reference_points = [x for x in sorted(os.listdir(os.path.join(input_directory, "reference"))) if x.endswith("ref.bin")]
-    projected_points = [x for x in sorted(os.listdir(os.path.join(input_directory, "projected"))) if x.endswith("proj.bin")]
+    reference_tdfs = [
+        x 
+        for x in sorted(os.listdir(os.path.join(input_directory, "reference"))) 
+        if x.endswith(".gz")
+    ]
+    projected_tdfs = [
+        x
+        for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        if x.endswith(".gz")
+    ]
+    reference_points = [
+        x
+        for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+        if x.endswith("ref.bin")
+    ]
+    projected_points = [
+        x for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        if x.endswith("proj.bin")
+    ]
 
     tdf_grid_dimensions = 30*30*30
 
@@ -46,22 +61,88 @@ def generate_data(input_directory, bacth_size):
                 if random_idx_nonmatching != random_idx_matching:
                     break
 
-            random_offset = np.random.randint(0, 100)
-            #print idx,"/", batch_size
+            p1_tdf_filename = os.path.join(
+                args.input_directory,
+                "reference",
+                reference_tdfs[random_idx_matching]
+            )
+            p2_tdf_filename = os.path.join(
+                args.input_directory,
+                "projected",
+                projected_tdfs[random_idx_matching]
+            )
+            p3_tdf_filename = os.path.join(
+                args.input_directory,
+                "reference",
+                reference_tdfs[random_idx_nonmatching]
+            )
 
-            p1_tdf_filename = os.path.join(args.input_directory, "reference", reference_tdfs[random_idx_matching])
-            p2_tdf_filename = os.path.join(args.input_directory, "projected", projected_tdfs[random_idx_matching])
-            p3_tdf_filename = os.path.join(args.input_directory, "reference", reference_tdfs[random_idx_nonmatching])
+            f1_points = open(os.path.join(
+                args.input_directory,
+                "reference",
+                reference_points[random_idx_matching]
+            ))
+            f2_points = open(os.path.join(
+                args.input_directory,
+                "projected",
+                projected_points[random_idx_matching]
+            ))
+            f3_points = open(os.path.join(
+                args.input_directory,
+                "reference",
+                reference_points[random_idx_nonmatching]
+            ))
 
-            f1_points = open(os.path.join(args.input_directory, "reference", reference_points[random_idx_matching]))
-            f2_points = open(os.path.join(args.input_directory, "projected", projected_points[random_idx_matching]))
-            f3_points = open(os.path.join(args.input_directory, "reference", reference_points[random_idx_nonmatching]))
-
-            points_grid_p1 = convert_points_to_grid(p1_tdf_filename, f1_points)
+            points_grid_p1, p1_dim_x, p1_dim_y, p1_dim_z = convert_points_to_grid(p1_tdf_filename, f1_points)
+            points_grid_p2, p2_dim_x, p2_dim_y, p2_dim_z = convert_points_to_grid(p2_tdf_filename, f2_points)
+            points_grid_p3, p3_dim_x, p3_dim_y, p3_dim_z = convert_points_to_grid(p3_tdf_filename, f3_points)
             # Choose a point randomly
-            random_point = np.random.randint(0, len(points_grid_p1))
-            p = utils.generate_tdf_voxel_grid(points_grid[random_point], grid, dim_x, dim_y, dim_z)
+            if len(points_grid_p1) < len(points_grid_p3):
+                random_point = np.random.randint(0, len(points_grid_p1))
+            else:
+                random_point = np.random.randint(0, len(points_grid_p1))
+
+            tdf_p1 = utils.generate_tdf_voxel_grid(
+                points_grid_p1[random_point],
+                points_grid_p1,
+                p1_dim_x,
+                p1_dim_y,
+                p1_dim_z
+            )
     
+            tdf_p2 = utils.generate_tdf_voxel_grid(
+                points_grid_p2[random_point],
+                points_grid_p2,
+                p2_dim_x,
+                p2_dim_y,
+                p2_dim_z
+            )
+
+            tdf_p3 = utils.generate_tdf_voxel_grid(
+                points_grid_p3[random_point],
+                points_grid_p3,
+                p3_dim_x,
+                p3_dim_y,
+                p3_dim_z
+            )
+
+
+            # Add the reference point
+            P1 = np.vstack((P1, tdf_p1))
+            P1 = np.vstack((P1, tdf_p1))
+            labels.append(1)
+            # Add the matching point and the non-matching point
+            P2 = np.vstack((P2, tdf_p2))
+            P2 = np.vstack((P2, tdf_p3))
+            labels.append(0)
+
+            f1_points.close()
+            f2_points.close()
+            f3_points.close()
+
+        yield [[P1.reshape((-1, 30, 30, 30, 1)), P2.reshape((-1, 30, 30, 30, 1))], np.array(labels)]
+
+
 def generate_batches(input_directory, batch_size):
     p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
     p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
