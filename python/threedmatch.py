@@ -25,57 +25,43 @@ class LossHistory(Callback):
     def on_batch_end(self, batch, logs={}):
         self.losses.append(logs.get('loss'))
 
-def generate_validation(input_directory, n_samples=1000):
-    p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
-    p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
-    p3 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p3_tdf.bin")]
+
+def generate_data(input_directory, bacth_size):
+    reference_tdfs = [x for x in sorted(os.listdir(os.path.join(input_directory, "reference"))) if x.endswith(".gz")]
+    projected_tdfs = [x for x in sorted(os.listdir(os.path.join(input_directory, "projected"))) if x.endswith(".gz")]
+    reference_points = [x for x in sorted(os.listdir(os.path.join(input_directory, "reference"))) if x.endswith("ref.bin")]
+    projected_points = [x for x in sorted(os.listdir(os.path.join(input_directory, "projected"))) if x.endswith("proj.bin")]
 
     tdf_grid_dimensions = 30*30*30
 
-    P1 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
-    P2 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
-    labels = []
-    # Choose a random index and a random offset to read from the input directory
-    for idx in range(n_samples):
-        random_idx = np.random.randint(0, len(p1))
-        random_offset = np.random.randint(0, 100)
-        #print idx,"/", batch_size
+    while True:
+        P1 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
+        P2 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
+        labels = []
+        # Choose a random index and a random offset to read from the input directory
+        for idx in range(batch_size):
+            random_idx_matching = np.random.randint(0, len(reference))
+            while True:
+                random_idx_nonmatching = np.random.randint(0, len(reference))
+                if random_idx_nonmatching != random_idx_matching:
+                    break
 
-        f1 = open(os.path.join(input_directory, p1[random_idx]))
-        f1.seek(random_offset * 4 * tdf_grid_dimensions)
-        d1 = np.fromfile(f1, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d1) == 0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p1[random_idx]),)
+            random_offset = np.random.randint(0, 100)
+            #print idx,"/", batch_size
 
-        f2 = open(os.path.join(input_directory, p2[random_idx]))
-        f2.seek(random_offset * 4 * tdf_grid_dimensions)
-        d2 = np.fromfile(f2, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d2)==0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p2[random_idx]),)
+            p1_tdf_filename = os.path.join(args.input_directory, "reference", reference_tdfs[random_idx_matching])
+            p2_tdf_filename = os.path.join(args.input_directory, "projected", projected_tdfs[random_idx_matching])
+            p3_tdf_filename = os.path.join(args.input_directory, "reference", reference_tdfs[random_idx_nonmatching])
 
-        f3 = open(os.path.join(input_directory, p3[random_idx]))
-        f3.seek(random_offset * 4 * tdf_grid_dimensions)
-        d3 = np.fromfile(f3, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d3)==0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p3[random_idx]),)
+            f1_points = open(os.path.join(args.input_directory, "reference", reference_points[random_idx_matching]))
+            f2_points = open(os.path.join(args.input_directory, "projected", projected_points[random_idx_matching]))
+            f3_points = open(os.path.join(args.input_directory, "reference", reference_points[random_idx_nonmatching]))
 
-        # Add the reference point
-        P1 = np.vstack((P1, d1))
-        P1 = np.vstack((P1, d1))
-        labels.append(1)
-        # Add the matching point and the non-matching point
-        P2 = np.vstack((P2, d2))
-        P2 = np.vstack((P2, d3))
-        labels.append(0)
-
-        f1.close()
-        f2.close()
-        f3.close()
-
-    print "Validation set with %d samples created" %(n_samples,)
-
-    return [[P1.reshape((-1, 30, 30, 30, 1)), P2.reshape((-1, 30, 30, 30, 1))], np.array(labels)]
-
+            points_grid_p1 = convert_points_to_grid(p1_tdf_filename, f1_points)
+            # Choose a point randomly
+            random_point = np.random.randint(0, len(points_grid_p1))
+            p = utils.generate_tdf_voxel_grid(points_grid[random_point], grid, dim_x, dim_y, dim_z)
+    
 def generate_batches(input_directory, batch_size):
     p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
     p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
@@ -274,7 +260,7 @@ def main(argv):
         args.steps_per_epoch,
         epochs=args.epochs,
         verbose=1,
-        validation_data=generate_validation(args.testing_directory, args.n_test_samples),
+        validation_data=utils.generate_batch(args.testing_directory, args.n_test_samples),
         callbacks=[history, checkpointer]
     )
     with open("/tmp/losses.txt", "wb+") as out:

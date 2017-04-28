@@ -44,6 +44,22 @@ def generate_tdf_voxel_grid(point, grid, dim_x, dim_y, dim_z):
     return np.array(tdf_voxel_grid).reshape(-1, 30, 30, 30, 1)
 
 
+def convert_points_to_grid(tdf_filename, points_filename, voxel_size=0.1):
+    origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid = utils.parse_tdf_grid_from_file(
+        tdf_filename
+    )
+    points = np.fromfile(points_filename, dtype=np.float32).reshape(-1, 3)
+    points_grid = utils.points_to_grid(
+        points,
+        origin_x,
+        origin_y,
+        origin_z,
+        voxel_size
+    )
+
+    return points_grid
+
+    
 def generate_batch(input_directory, batch_size):
     p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
     p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
