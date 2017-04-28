@@ -250,6 +250,7 @@ int main(int argc, char *argv[]) {
   std::ofstream out_file(out_saveto_path, std::ios::binary);
 
   out_file.write((char*)&reference_tdf, sizeof(reference_tdf));
+  out_file.write((char*)reference_tdf.tdf_values, sizeof(float)*reference_tdf.dim_x*reference_tdf.dim_y*reference_tdf.dim_z);
   out_file.close();
   std::cout << "TDF voxel grid saved" << std::endl;
 }
