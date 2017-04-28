@@ -11,6 +11,8 @@
 3dmatch_train_snapshot_*.marvin
 /training/marvin
 /data_parsing/parse_point_clouds
+/data_parsing/export_tdf_from_pointcloud
 /data
 *.pyc
 *.py.swp
+
