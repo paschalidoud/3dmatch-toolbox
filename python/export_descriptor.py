@@ -3,56 +3,14 @@
 extract each descriptors
 """
 import argparse
-import gzip
 import os
 import sys
 
 import numpy as np
 
+import utils
+
 #from threedmatch import create_network
-
-
-def parse_tdf_grid_from_file(tdf_grid_file):
-   f = gzip.open(tdf_grid_file, "rb")
-   origin_x = np.fromstring(f.read(4), dtype=np.float32)
-   origin_y = np.fromstring(f.read(4), dtype=np.float32)
-   origin_z = np.fromstring(f.read(4), dtype=np.float32)
-
-   dim_x = np.fromstring(f.read(4), dtype=np.int32)
-   dim_y = np.fromstring(f.read(4), dtype=np.int32)
-   dim_z = np.fromstring(f.read(4), dtype=np.int32)
-
-   pointer = np.fromstring(f.read(8), dtype=np.int64)
-
-   grid = np.fromstring(f.read(8*dim_x[0]*dim_y[0]*dim_z[0]), dtype=np.float32)
-
-   f.close()
-   return origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid
-
-
-def points_to_grid(points, origin_x, origin_y, origin_z, voxel_size):
-    origins = np.array([origin_x, origin_y, origin_z]).reshape(1, 3)
-    return np.round((points - np.repeat(origins, len(points), axis=0)) / voxel_size)
-
-
-def generate_tdf_voxel_grid(point, grid, dim_x, dim_y, dim_z, input_shape):
-    tdf_voxel_grid = []
-     
-    z_start = int(point[2] - 15)
-    z_stop = int(point[2] + 15)
-    y_start = int(point[1] - 15)
-    y_stop = int(point[1] + 15)
-    x_start = int(point[0] - 15)
-    x_stop = int(point[0] + 15)
-
-    for z in range(z_start, z_stop, 1):
-        for y in range(y_start, y_stop, 1):
-            for x in range(x_start, x_stop, 1):
-                tdf_voxel_grid.append(grid[z * dim_x * dim_y + y * dim_x + x])
-
-                print grid[z * dim_x * dim_y + y * dim_x + x]
-    return np.array(tdf_voxel_grid).reshape(-1, 30, 30, 30, 1)
-
 
 def main(argv):
     parser = argparse.ArgumentParser(
@@ -89,12 +47,12 @@ def main(argv):
     input_shape = (30, 30, 30, 1)
     #input_shape = (1, 30, 30, 30)
 
-    origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid = parse_tdf_grid_from_file(
+    origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid = utils.parse_tdf_grid_from_file(
         args.tdf_grid_file
     )
 
     points = np.fromfile(args.pointcloud_file, dtype=np.float32).reshape(-1, 3)
-    points_grid = points_to_grid(
+    points_grid = utils.points_to_grid(
         points,
         origin_x,
         origin_y,
@@ -102,7 +60,7 @@ def main(argv):
         args.voxel_size
     )
     
-    p = generate_tdf_voxel_grid(points_grid[0], grid, dim_x, dim_y, dim_z, input_shape)
+    p = utils.generate_tdf_voxel_grid(points_grid[0], grid, dim_x, dim_y, dim_z)
 
     #training_model, model = create_network(
     #    input_shape,
