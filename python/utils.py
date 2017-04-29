@@ -1,114 +1,320 @@
 #!/usr/bin/env python
 import gzip
+import os
+import sys
+import threading
+import time
+
 import numpy as np
 
+from keras.utils.generic_utils import Progbar
+
+
 def parse_tdf_grid_from_file(tdf_grid_file):
-   f = gzip.open(tdf_grid_file, "rb")
-   origin_x = np.fromstring(f.read(4), dtype=np.float32)
-   origin_y = np.fromstring(f.read(4), dtype=np.float32)
-   origin_z = np.fromstring(f.read(4), dtype=np.float32)
+    with gzip.open(tdf_grid_file, "rb") as f:
+        # Change the order of the shape into z, y, x so that they are in the
+        # same order as in memory
+        origin = np.fromstring(f.read(3*4), dtype=np.float32)
+        shape = np.fromstring(f.read(3*4), dtype=np.int32)[::-1]
 
-   dim_x = np.fromstring(f.read(4), dtype=np.int32)
-   dim_y = np.fromstring(f.read(4), dtype=np.int32)
-   dim_z = np.fromstring(f.read(4), dtype=np.int32)
+        # Discard the pointer saved with the struct
+        f.read(8)
 
-   pointer = np.fromstring(f.read(8), dtype=np.int64)
+        # Actually read the data
+        grid = np.fromstring(
+            #f.read(4 * shape.prod()),
+            f.read(),
+            dtype=np.float32
+        ).reshape(shape)
 
-   grid = np.fromstring(f.read(8*dim_x[0]*dim_y[0]*dim_z[0]), dtype=np.float32)
-
-   f.close()
-   return origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid
-
-
-def points_to_grid(points, origin_x, origin_y, origin_z, voxel_size):
-    origins = np.array([origin_x, origin_y, origin_z]).reshape(1, 3)
-    return np.round((points - np.repeat(origins, len(points), axis=0)) / voxel_size)
+    return origin, grid
 
 
-def generate_tdf_voxel_grid(point, grid, dim_x, dim_y, dim_z):
-    tdf_voxel_grid = []
-     
-    z_start = int(point[2] - 15)
-    z_stop = int(point[2] + 15)
-    y_start = int(point[1] - 15)
-    y_stop = int(point[1] + 15)
-    x_start = int(point[0] - 15)
-    x_stop = int(point[0] + 15)
+def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
+    # Transform the point to grid indexes
+    point = np.round((point - origin) / voxel_size).astype(int)
 
-    for z in range(z_start, z_stop, 1):
-        for y in range(y_start, y_stop, 1):
-            for x in range(x_start, x_stop, 1):
-                tdf_voxel_grid.append(grid[z * dim_x * dim_y + y * dim_x + x])
+    # Extract the a TDF block surrounding the point
+    dims = np.array(tdf_grid_dims[:3]) / 2
+    start = point-dims
+    end = point+dims
 
-                print grid[z * dim_x * dim_y + y * dim_x + x]
-    return np.array(tdf_voxel_grid).reshape(-1, 30, 30, 30, 1)
+    # NOTE: The data in memory are ordered z, y, x so that x is the fastest
+    # changing index
+    return np.array(
+        grid[start[2]:end[2], start[1]:end[1], start[0]:end[0]]
+    ).reshape(tdf_grid_dims)
 
 
-def convert_points_to_grid(tdf_filename, points_filename, voxel_size=0.1):
-    origin_x, origin_y, origin_z, dim_x, dim_y, dim_z, grid = utils.parse_tdf_grid_from_file(
-        tdf_filename
-    )
-    points = np.fromfile(points_filename, dtype=np.float32).reshape(-1, 3)
-    points_grid = utils.points_to_grid(
-        points,
-        origin_x,
-        origin_y,
-        origin_z,
-        voxel_size
-    )
+def generate_tdf_voxel_grid(point_file, tdf_file, point_idx, voxel_size=0.1,
+                            tdf_grid_dims=(30, 30, 30, 1)):
+    # Read the grid and the points
+    origin, grid = parse_tdf_grid_from_file(tdf_file)
+    points = np.fromfile(point_file, dtype=np.float32).reshape(-1, 3)
 
-    return points_grid, dim_x, dim_y, dim_z
-
-    
-def generate_batch(input_directory, batch_size):
-    p1 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p1_tdf.bin")]
-    p2 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p2_tdf.bin")]
-    p3 = [x for x in sorted(os.listdir(input_directory)) if x.endswith(".p3_tdf.bin")]
-
-    tdf_grid_dimensions = 30*30*30
+    return extract_point_from_grid(
+        origin,
+        points[point_idx],
+        voxel_size,
+        tdf_grid_dims
+    ).reshape((1,) + tdf_grid_dims)
 
 
-    P1 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
-    P2 = np.empty((0, tdf_grid_dimensions), dtype=np.float32)
-    labels = []
-    # Choose a random index and a random offset to read from the input directory
-    for idx in range(batch_size):
-        random_idx = np.random.randint(0, len(p1))
-        random_offset = np.random.randint(0, 100)
-        #print idx,"/", batch_size
 
-        f1 = open(os.path.join(input_directory, p1[random_idx]))
-        f1.seek(random_offset * 4 * tdf_grid_dimensions)
-        d1 = np.fromfile(f1, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d1) == 0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p1[random_idx]),)
-
-        f2 = open(os.path.join(input_directory, p2[random_idx]))
-        f2.seek(random_offset * 4 * tdf_grid_dimensions)
-        d2 = np.fromfile(f2, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d2)==0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p2[random_idx]),)
-
-        f3 = open(os.path.join(input_directory, p3[random_idx]))
-        f3.seek(random_offset * 4 * tdf_grid_dimensions)
-        d3 = np.fromfile(f3, count=tdf_grid_dimensions, dtype=np.float32).reshape(-1, tdf_grid_dimensions)
-        if np.sum(d3)==0.0:
-            assert "TDF voxel with zeros in %s" %(os.path.join(input_directory, p3[random_idx]),)
-
-        # Add the reference point
-        P1 = np.vstack((P1, d1))
-        P1 = np.vstack((P1, d1))
-        labels.append(1)
-        # Add the matching point and the non-matching point
-        P2 = np.vstack((P2, d2))
-        P2 = np.vstack((P2, d3))
-        labels.append(0)
-
-        f1.close()
-        f2.close()
-        f3.close()
-
-    return [P1.reshape((-1, 30, 30, 30, 1)), P2.reshape((-1, 30, 30, 30, 1))], np.array(labels)
-    #return [P1.reshape((-1, 1, 30, 30, 30)), P2.reshape((-1, 1, 30, 30, 30))], np.array(labels)
+def _points_in_file(filepath, dtype_size=3*4):
+    return os.path.getsize(filepath) / dtype_size
 
 
+def _random_tuple(max_bs, not_matching=None):
+    a = np.random.randint(0, len(max_bs))
+    b = np.random.randint(0, max_bs[a])
+
+    if not_matching is not None and (a, b) == not_matching:
+        return _random_tuple(max_bs, not_matching)
+
+    return a, b
+
+
+def generate_batches(input_directory, batch_size, voxel_size=0.1,
+                  tdf_grid_dims=(30, 30, 30, 1)):
+    reference_tdfs = [
+        os.path.join(input_directory, "reference", x)
+        for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+        if x.endswith(".gz")
+    ]
+    projected_tdfs = [
+        os.path.join(input_directory, "projected", x)
+        for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        if x.endswith(".gz")
+    ]
+    reference_points = [
+        os.path.join(input_directory, "reference", x)
+        for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+        if x.endswith("ref.bin")
+    ]
+    projected_points = [
+        os.path.join(input_directory, "projected", x)
+        for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        if x.endswith("proj.bin")
+    ]
+    number_of_points = map(_points_in_file, reference_points)
+
+    # Make sure that for every frame there is a reference point cloud and tdf
+    # and a projected point cloud and tdf
+    assert len(reference_tdfs) == len(reference_points)
+    assert len(reference_tdfs) == len(projected_tdfs)
+    assert len(reference_tdfs) == len(projected_points)
+
+    while True:
+        # These will hold the batch data
+        P1 = np.empty((0,) + tdf_grid_dims, dtype=np.float32)
+        P2 = np.empty((0,) + tdf_grid_dims, dtype=np.float32)
+        labels = []
+
+        for idx in range(batch_size):
+            # Choose a random frame and a random point from that frame as the
+            # first point
+            p1_frame_idx, p1_point_idx = _random_tuple(number_of_points)
+
+            # Choose the second point taking into account if it will be a
+            # matching point or not
+            matching = np.random.randint(0, 2)
+            if matching > 0:
+                p2_frame_idx, p2_point_idx = _random_tuple(
+                    number_of_points,
+                    (p1_frame_idx, p1_point_idx)
+                )
+            else:
+                p2_frame_idx, p2_point_idx = p1_frame_idx, p1_point_idx
+
+            # Load the tdfs for the points
+            p1_tdf = generate_tdf_voxel_grid(
+                reference_points[p1_frame_idx],
+                reference_tdfs[p1_frame_idx],
+                p1_point_idx,
+                voxel_size,
+                tdf_grid_dims
+            )
+            p2_tdf = generate_tdf_voxel_grid(
+                projected_points[p2_frame_idx],
+                projected_tdfs[p2_frame_idx],
+                p2_point_idx,
+                voxel_size,
+                tdf_grid_dims
+            )
+
+            # Append to the matrices
+            P1 = np.vstack([P1, p1_tdf])
+            P2 = np.vstack([P2, p2_tdf])
+            labels.append(matching)
+
+        yield [[P1, P2], np.array(labels).astype(np.float32)]
+
+
+class BatchProvider(object):
+    def __init__(self, input_directory, batch_size, voxel_size=0.1,
+                 tdf_grid_dims=(30, 30, 30, 1), batches=500, verbose=1):
+        # This is going to be the amount of cached elements
+        N = batch_size * batches
+
+        # Allocate memory for the cached elements
+        self.reference = np.empty((N,) + tdf_grid_dims, dtype=np.float32)
+        self.projected = np.empty((N,) + tdf_grid_dims, dtype=np.float32)
+        self.batch_size = batch_size
+        self.batches = batches
+        self.voxel_size = voxel_size
+        self.tdf_grid_dims = tdf_grid_dims
+        self.input_directory = input_directory
+        self.verbose = verbose
+
+        # Start a thread to fill the cache
+        self.cache_lock = threading.RLock()
+        self._producer_thread = threading.Thread(target=self._producer)
+        self._producer_thread.daemon = True
+        self._producer_thread.start()
+
+        # Member variable to stop the thread (to be set via a call to stop)
+        self._stop = False
+        self._ready = False
+
+    def ready(self, blocking=True):
+        while blocking and not self._ready:
+            time.sleep(0.1)
+        return self._ready
+
+    def stop(self):
+        self._stop = True
+        self._producer_thread.join()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next()
+
+    def next(self):
+        N = self.batches * self.batch_size
+        idxs1 = np.random.randint(0, N, size=self.batch_size)
+        while True:
+            idxs2 = np.random.randint(0, N, size=self.batch_size)
+            if np.all(idxs1 != idxs2):
+                break
+        matching = np.random.randint(0, 2, size=self.batch_size)
+        proj_idxs = np.select([matching == 1, matching == 0], [idxs1, idxs2])
+
+        with self.cache_lock:
+            return [
+                [
+                    self.reference[idxs1],
+                    self.projected[proj_idxs]
+                ],
+                matching.astype(np.float32)
+            ]
+
+    def _producer(self):
+        # We will be needing the file lists
+        input_directory = self.input_directory
+        reference_tdfs = [
+            os.path.join(input_directory, "reference", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+            if x.endswith(".gz")
+        ]
+        projected_tdfs = [
+            os.path.join(input_directory, "projected", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+            if x.endswith(".gz")
+        ]
+        reference_points = [
+            os.path.join(input_directory, "reference", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+            if x.endswith("ref.bin")
+        ]
+        projected_points = [
+            os.path.join(input_directory, "projected", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+            if x.endswith("proj.bin")
+        ]
+        number_of_points = map(_points_in_file, reference_points)
+
+        # Make sure that for every frame there is a reference point cloud and tdf
+        # and a projected point cloud and tdf
+        assert len(reference_tdfs) == len(reference_points)
+        assert len(reference_tdfs) == len(projected_tdfs)
+        assert len(reference_tdfs) == len(projected_points)
+
+        # Keep note of the passes so that we can be sure to unlock the cache
+        # for reading and and also show progress during the first pass
+        passes = 0
+        if self.verbose > 0:
+            prog = Progbar(self.batches)
+
+        while True:
+            # Acquire the lock for the whole first pass
+            if passes == 0:
+                self.cache_lock.acquire()
+
+            for batch_idx in range(self.batches):
+                # We 're done stop now
+                if self._stop:
+                    return
+
+                # Pick a frame in random
+                frame = np.random.randint(0, len(reference_points))
+
+                # Load the tdf grids and the point clouds
+                origin_ref, tdf_ref = parse_tdf_grid_from_file(reference_tdfs[frame])
+                points_ref = np.fromfile(
+                    reference_points[frame],
+                    dtype=np.float32
+                ).reshape(-1, 3)
+                origin_proj, tdf_proj = parse_tdf_grid_from_file(projected_tdfs[frame])
+                points_proj = np.fromfile(
+                    projected_points[frame],
+                    dtype=np.float32
+                ).reshape(-1, 3)
+
+                # Pick random points to generate tdf blocks
+                idxs = np.random.randint(
+                    0,
+                    number_of_points[frame],
+                    size=self.batch_size
+                )
+
+                # Do the copy to the cache but make sure you lock first and unlock
+                # afterwards
+                with self.cache_lock:
+                    for i, idx in enumerate(idxs):
+                        try:
+                            self.reference[batch_idx*self.batch_size + i] = \
+                                extract_point_from_grid(
+                                    origin_ref,
+                                    tdf_ref,
+                                    points_ref[idx],
+                                    self.voxel_size,
+                                    self.tdf_grid_dims
+                                )
+                            self.projected[batch_idx*self.batch_size + i] = \
+                                extract_point_from_grid(
+                                    origin_proj,
+                                    tdf_proj,
+                                    points_proj[idx],
+                                    self.voxel_size,
+                                    self.tdf_grid_dims
+                                )
+                        except Exception as e:
+                            sys.stderr.write("Exception caught in producer thread\n")
+                            sys.stderr.write("Frame: %s\n" % (reference_points[frame],))
+                            sys.stderr.write("Point: %d\n" % (idx,))
+                            sys.stderr.write(str(e))
+
+                # Show progress if it is the first pass
+                if passes == 0 and self.verbose > 0:
+                    prog.update(batch_idx + 1)
+
+            # Release the lock if it was the first pass
+            if passes == 0:
+                self._ready = True
+                self.cache_lock.release()
+
+            # Count the passes
+            passes += 1
