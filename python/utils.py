@@ -39,6 +39,15 @@ def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
     start = point-dims
     end = point+dims
 
+    # Check for off by 1 errors
+    under_col = start == -1
+    over_col = end >= np.array(grid.shape)[::-1]
+    start[under_col] += 1
+    end[under_col] += 1
+    start[over_col] -= 1
+    end[over_col] -= 1
+
+
     # NOTE: The data in memory are ordered z, y, x so that x is the fastest
     # changing index
     return np.array(
