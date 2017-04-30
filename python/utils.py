@@ -63,6 +63,7 @@ def generate_tdf_voxel_grid(point_file, tdf_file, point_idx, voxel_size=0.1,
 
     return extract_point_from_grid(
         origin,
+        grid,
         points[point_idx],
         voxel_size,
         tdf_grid_dims
