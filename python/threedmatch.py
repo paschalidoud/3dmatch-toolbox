@@ -20,16 +20,29 @@ from utils import BatchProvider
 
 #from theano.compile.nanguardmode import NanGuardMode
 class MetricsHistory(Callback):
-    def __init__(self, filepath):
-        self.fd = open(filepath, "w")
-        self.keys = []
+    def __init__(self, filepath_train, filepath_val):
+        self.fd_t = open(filepath_train, "w")
+        self.fd_v = open(filepath_val, "w")
+        self.keys_t = []
+        self.keys_v = []
+
+    def _on_end(self, fd, keys, logs):
+        if not keys:
+            keys.extend(sorted(logs.keys()))
+            print >>fd, " ".join(keys)
+
+        print >>fd, " ".join(map(str, [logs[k] for k in keys]))
+        fd.flush()
 
     def on_batch_end(self, batch, logs={}):
-        if not self.keys:
-            self.keys = sorted(logs.keys())
-            print >>self.fd, " ".join(self.keys)
-        print >>self.fd, " ".join(map(str, [logs[k] for k in self.keys]))
-        self.fd.flush()
+        self._on_end(self.fd_t, self.keys_t, logs)
+
+    def on_epoch_end(self, epoch, logs={}):
+        d = {"epoch": epoch}
+        for k in logs:
+            if k.startswith("val_"):
+                d[k] = logs[k]
+        self._on_end(self.fd_v, self.keys_v, d)
 
 
 def collect_test_set(input_directory, n_samples, batch_size=128, voxel_size=0.1,
@@ -221,7 +234,10 @@ def main(argv):
         lr=args.learning_rate
     )
 
-    history = MetricsHistory(path.join(args.output_directory, "metrics.txt"))
+    history = MetricsHistory(
+        path.join(args.output_directory, "train.txt"),
+        path.join(args.output_directory, "val.txt")
+    )
     checkpointer = ModelCheckpoint(
         filepath=path.join(args.output_directory, "weights.{epoch:02d}.hdf5"),
         verbose=0
