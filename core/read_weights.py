@@ -25,18 +25,13 @@ def read_tensor(f):
         f,
         count=weights_shape[0]*weights_shape[1]*weights_shape[2]*weights_shape[3]*weights_shape[4],
         dtype=np.float32
-    )
+    ).reshape(*weights_shape)
+
     if "bias" in layer_name:
-        weights = weights.reshape(
-            (weights_shape[1])
-        )
-        
+        weights = weights.ravel()
     else:
-        weights = weights.reshape(
-            (weights_shape[2], weights_shape[3], weights_shape[4], weights_shape[1], weights_shape[0])
-        )
-    print weights.shape
-    print " "
+        weights = weights.transpose([2, 3, 4, 1, 0])
+
     return layer_name, weights
     
 
