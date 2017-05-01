@@ -333,3 +333,23 @@ class BatchProvider(object):
 def save_to_binary_file(output_file, data, dtype=np.float32):
     with open(output_file, "wb") as out:
         data.astype(dtype).tofile(out)
+
+def filter_data(data, xlim, ylim, zlim):
+    xs = np.logical_and(
+        data[:, 0] < xlim[1],
+        data[:, 0] > xlim[0]
+    )
+    ys = np.logical_and(
+        data[:, 1] < ylim[1],
+        data[:, 1] > ylim[0]
+    )
+    zs = np.logical_and(
+        data[:, 2] < zlim[1],
+        data[:, 2] > zlim[0]
+    )
+    idxs = np.logical_and(
+        np.logical_and(xs, ys),
+        zs
+    )
+
+    return data[idxs, :]

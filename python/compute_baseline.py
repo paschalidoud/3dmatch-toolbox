@@ -13,7 +13,7 @@ from threedmatch import create_network
 from threedmatch_scene_flow import compute_correspondences, \
                                    compute_projected
 from utils import parse_tdf_grid_from_file, extract_point_from_grid, \
-                  save_to_binary_file
+                  save_to_binary_file, filter_data
 
 
 def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
@@ -42,12 +42,14 @@ def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
             yield batch_tdfs
 
         
-def compute_descriptors(tdf_file, points_file, model, voxel_size=0.1,
+def compute_descriptors(tdf_file, points_file, model, xlim, ylim, zlim, voxel_size=0.1,
                         tdf_grid_dims=(30, 30, 30, 1), batch_size=256.0):
     points = np.fromfile(
         points_file,
         dtype=np.float32
     ).reshape(-1, 3)
+
+    points = filter_data(points, xlim, ylim, zlim)
     print points.shape
 
     D = model.predict_generator(
@@ -66,7 +68,8 @@ def compute_descriptors(tdf_file, points_file, model, voxel_size=0.1,
     return D, points
 
 
-def set_paths(input_directory, sequence, start_frame, end_frame):
+def set_paths(input_directory, sequence, start_frame):
+    end_frame = start_frame + 1
     t = "/".join([input_directory, sequence])
     ref_pointcloud_file = "_".join([t, "%03d" %start_frame, "ref.bin"])
     proj_pointcloud_file = "_".join([t, "%03d" %end_frame, "ref.bin"])
@@ -95,11 +98,6 @@ def main(argv):
         "start_frame",
         type=int,
         help="Index of the starting frame"
-    )
-    parser.add_argument(
-        "end_frame",
-        type=int,
-        help="Index of the end frame"
     )
     parser.add_argument(
         "groundtruth_file",
@@ -173,6 +171,24 @@ def main(argv):
         action="store_true",
         help="Set if you wish to save the ground truth scene flow"
     )
+    parser.add_argument(
+        "--xlim",
+        type=lambda x: tuple(map(float, x.split(","))),
+        default="-30,30",
+        help="The limits of the x-axis"
+    )
+    parser.add_argument(
+        "--ylim",
+        type=lambda x: tuple(map(float, x.split(","))),
+        default="-30,30",
+        help="The limits of the y-axis"
+    )
+    parser.add_argument(
+        "--zlim",
+        type=lambda x: tuple(map(float, x.split(","))),
+        default="-3,2",
+        help="The limits of the y-axis"
+    )
 
     args = parser.parse_args(argv)
     input_shape = (30, 30, 30, 1)
@@ -200,6 +216,9 @@ def main(argv):
         ref_tdf_grid_file,
         ref_pointcloud_file,
         model,
+        args.xlim,
+        args.ylim,
+        args.zlim,
         voxel_size=args.voxel_size
     )
     print "Computing descriptors for the projected pointcloud..."
@@ -207,6 +226,9 @@ def main(argv):
         proj_tdf_grid_file,
         proj_pointcloud_file,
         model,
+        args.xlim,
+        args.ylim,
+        args.zlim,
         voxel_size=args.voxel_size
     )
 
@@ -239,6 +261,9 @@ def main(argv):
     gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)
     # Take the points for the starting frame 
     points = gt[:, 0] == args.start_frame
+    # Filter points according to the limits
+    points = filter_data(points, args.xlim, args.ylim, args.zlim)
+
     # Find the points of the reference and the projected point cloud
     d_ref_gt = gt[points, 2:5]
     d_proj_gt = gt[points, 5:]
