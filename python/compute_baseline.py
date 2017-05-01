@@ -257,15 +257,15 @@ def main(argv):
     scene_flow_matches = c_proj - c_ref
 
     # Read the groundtruth data for the specified frame
-    gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)[:, :2]
-    # Take the points for the starting frame 
-    points = gt[:, 0] == args.start_frame
+    gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)
+    # Take the groundtruth for the frame we are interested in
+    gt_start_frame = gt[gt[:, 0] == args.start_frame]
     # Filter points according to the limits
-    points = filter_data(points, args.xlim, args.ylim, args.zlim)
+    gt_start_frame = filter_data(gt_start_frame[:, 2:], args.xlim, args.ylim, args.zlim)
 
     # Find the points of the reference and the projected point cloud
-    d_ref_gt = gt[points, :3]
-    d_proj_gt = gt[points, 3:]
+    d_ref_gt = gt_start_frame[:, :3]
+    d_proj_gt = gt_start_frame[:, 3:]
 
     # Compute the scene flow
     scene_flow_gt = d_proj_gt - d_ref_gt
@@ -282,9 +282,13 @@ def main(argv):
         mean_normalized_diff_norm if args.normalized else mean_diff_norm
     )
     
-    with open(os.path.join(args.output_directory, "baseline_metrics.txt"), "w") as f:
+    with open(os.path.join(args.output_directory, "baseline_metrics.txt"), "a") as f:
+        f.write("Sequence: %s\n" % args.sequence)
+        f.write("Start: %d\n" % args.start_frame)
+        f.write("k: %f\n" % args.k_neighbors)
+        f.write("threshold: %f\n" % args.threshold)
         f.write("Mean euclidean distance: %f\n" % mean_diff_norm)
-        f.write("Normalized mean euclidean distance: %f" % mean_normalized_diff_norm)
+        f.write("Normalized mean euclidean distance: %f\n" % mean_normalized_diff_norm)
 
     # Start saving stuff
     if args.store_descriptors:
