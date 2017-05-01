@@ -202,8 +202,7 @@ def main(argv):
     ref_pointcloud_file, ref_tdf_grid_file, proj_pointcloud_file, proj_tdf_grid_file = set_paths(
         args.input_directory,
         args.sequence,
-        args.start_frame,
-        args.end_frame
+        args.start_frame
     )
 
     # Check if output directory exists and if it doesn't create it
