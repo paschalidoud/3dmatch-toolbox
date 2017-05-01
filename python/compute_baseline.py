@@ -12,14 +12,16 @@ import numpy as np
 from threedmatch import create_network
 from threedmatch_scene_flow import compute_correspondences, \
                                    compute_projected
-from utils import parse_tdf_grid_from_file, extract_point_from_grid
+from utils import parse_tdf_grid_from_file, extract_point_from_grid, \
+                  save_to_binary_file
 
 
 def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
     origin, tdf = parse_tdf_grid_from_file(tdf_file)
+
     while True:
         batch_tdfs = np.empty((0, 30, 30, 30, 1), dtype=np.float32)
-        for i, p in enumerate(points):
+        for p in points:
             # Compute the tdf voxel grid for each point in the pointcloud
             p_tdf = extract_point_from_grid(
                         origin,
@@ -31,11 +33,15 @@ def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
 
             # Extract the descriptor for the computed tdf voxel grid
             batch_tdfs = np.vstack((batch_tdfs, p_tdf))
-            if batch_tdfs.shape[0] == min(batch_size, len(points)-1):
+            if batch_tdfs.shape[0] == batch_size:
+                yield batch_tdfs
                 # Reset batch_tdfs
                 batch_tdfs = np.empty((0, 30, 30, 30, 1), dtype=np.float32)
-                yield batch_tdfs
 
+        if len(batch_tdfs) > 0:
+            yield batch_tdfs
+
+        
 def compute_descriptors(tdf_file, points_file, model, voxel_size=0.1,
                         tdf_grid_dims=(30, 30, 30, 1), batch_size=256.0):
     points = np.fromfile(
@@ -44,24 +50,31 @@ def compute_descriptors(tdf_file, points_file, model, voxel_size=0.1,
     ).reshape(-1, 3)
     print points.shape
 
-    D = np.empty((0, 512), dtype=np.float32)
-    D = np.vstack((
-        D,
-        model.predict_generator(
-            generate_tdfs(
-                tdf_file,
-                points,
-                voxel_size=voxel_size,
-                tdf_grid_dims=tdf_grid_dims,
-                batch_size=batch_size
-            ),
-            np.ceil(len(points)/batch_size)
-
-        ))
+    D = model.predict_generator(
+        generate_tdfs(
+            tdf_file,
+            points,
+            voxel_size=voxel_size,
+            tdf_grid_dims=tdf_grid_dims,
+            batch_size=batch_size
+        ),
+        np.ceil(len(points)/batch_size),
+        verbose=1
     )
     print D.shape
 
     return D, points
+
+
+def set_paths(input_directory, sequence, start_frame, end_frame):
+    t = "/".join([input_directory, sequence])
+    ref_pointcloud_file = "_".join([t, "%03d" %start_frame, "ref.bin"])
+    proj_pointcloud_file = "_".join([t, "%03d" %end_frame, "ref.bin"])
+
+    ref_tdf_grid_file = "_".join([t, "%03d.voxel_tdf_grid.bin.gz" %start_frame])
+    proj_tdf_grid_file = "_".join([t, "%03d.voxel_tdf_grid.bin.gz" %end_frame])
+
+    return ref_pointcloud_file, ref_tdf_grid_file, proj_pointcloud_file, proj_tdf_grid_file
 
 
 def main(argv):
@@ -71,20 +84,22 @@ def main(argv):
                      " metrics")
     )
     parser.add_argument(
-        "ref_pointcloud_file",
-        help="Path to the file containing the pointcloud of the reference frame"
+        "input_directory",
+        help="Path to the directory containing the pointclouds and the tdf grids"
     )
     parser.add_argument(
-        "ref_tdf_grid_file",
-        help="Path to the file containing the tdf grid of the reference frame"
+        "sequence",
+        help="Name of the sequence to be processed"
     )
     parser.add_argument(
-        "proj_pointcloud_file",
-        help="Path to the file containing the pointcloud of the projected frame"
+        "start_frame",
+        type=int,
+        help="Index of the starting frame"
     )
     parser.add_argument(
-        "proj_tdf_grid_file",
-        help="Path to the file containing the tdf grid of the projected frame"
+        "end_frame",
+        type=int,
+        help="Index of the end frame"
     )
     parser.add_argument(
         "groundtruth_file",
@@ -96,38 +111,28 @@ def main(argv):
         help="Directory used to store various output files"
     )
     parser.add_argument(
-        "frame_id",
-        type=int,
-        help="Specify the index of the starting pointcloud in the scene flow"
-    )
-
-    parser.add_argument(
-        "--weight_file",
+        "weight_file",
         help="An initial weights file"
     )
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=0.001
-    )
+
     parser.add_argument(
         "--voxel_size",
         type=float,
         default=0.1,
-        help="Voxel size used to export TDF grid"
+        help="Voxel size used to export TDF grid (default:0.1)"
     )
 
     parser.add_argument(
         "--threshold",
         default=10000,
         type=float,
-        help="The distance threshold to determine the correspondences"
+        help="The distance threshold to determine the correspondences (default:10000)"
     )
     parser.add_argument(
         "--k_neighbors",
-        default=1,
         type=int,
-        help="The distance threshold to determine the correspondences"
+        default=1,
+        help="The distance threshold to determine the correspondences(default:1)"
     )
     parser.add_argument(
         "--leaf_size",
@@ -153,6 +158,11 @@ def main(argv):
         help="Normalize the difference distance with the scene flow norm"
     )
     parser.add_argument(
+        "--store_descriptors",
+        action="store_true",
+        help="Set if you wish to save the computed 3DMatch descriptors"
+    )
+    parser.add_argument(
         "--store_3dmatch_scene_flow",
         action="store_true",
         help=("Set if you wish to save the scene flow computed using the"
@@ -170,22 +180,32 @@ def main(argv):
     # Initialize the network to be used for the forward pass
     training_model, model = create_network(
         input_shape,
-        weight_file=args.weight_file,
-        lr=args.learning_rate
+        weight_file=args.weight_file
     )
+
+    ref_pointcloud_file, ref_tdf_grid_file, proj_pointcloud_file, proj_tdf_grid_file = set_paths(
+        args.input_directory,
+        args.sequence,
+        args.start_frame,
+        args.end_frame
+    )
+
+    # Check if output directory exists and if it doesn't create it
+    if not os.path.exists(args.output_directory):
+        os.makedirs(args.output_directory)
 
     # Compute the descriptor of the reference and the projected pointclouds
     print "Computing descriptors for the reference pointcloud..."
     D_ref, points_ref = compute_descriptors(
-        args.ref_tdf_grid_file,
-        args.ref_pointcloud_file,
+        ref_tdf_grid_file,
+        ref_pointcloud_file,
         model,
         voxel_size=args.voxel_size
     )
     print "Computing descriptors for the projected pointcloud..."
     D_proj, points_proj = compute_descriptors(
-        args.proj_tdf_grid_file,
-        args.proj_pointcloud_file,
+        proj_tdf_grid_file,
+        proj_pointcloud_file,
         model,
         voxel_size=args.voxel_size
     )
@@ -197,7 +217,7 @@ def main(argv):
         (scene_indices < 0).sum(),
         len(scene_indices)
     )
-    print "Compute the matches"
+    print "Compute the  %s-Nearest neighbors matches" %(args.k_neighbors,)
     C = np.hstack(
         [
             points_ref,
@@ -218,7 +238,7 @@ def main(argv):
     # Read the groundtruth data for the specified frame
     gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)
     # Take the points for the starting frame 
-    points = gt[:, 0] == args.frame_id
+    points = gt[:, 0] == args.start_frame
     # Find the points of the reference and the projected point cloud
     d_ref_gt = gt[points, 2:5]
     d_proj_gt = gt[points, 5:]
@@ -237,17 +257,44 @@ def main(argv):
         " normalized" if args.normalized else "",
         mean_normalized_diff_norm if args.normalized else mean_diff_norm
     )
+    
+    with open(os.path.join(args.output_directory, "baseline_metrics.txt"), "w") as f:
+        f.write("Mean euclidean distance: %f\n" % mean_diff_norm)
+        f.write("Normalized mean euclidean distance: %f" % mean_normalized_diff_norm)
 
-    # Store the files that should be stored
+    # Start saving stuff
+    if args.store_descriptors:
+        save_to_binary_file(
+            os.path.join(args.output_directory, "3dmatch_descriptors_ref.bin"),
+            D_ref
+        )
+        save_to_binary_file(
+            os.path.join(args.output_directory, "3dmatch_descriptors_proj.bin"),
+            D_proj
+        )
+
     if args.store_gt_scene_flow:
-        output_file = os.path.join(args.output_directory, "gt_scene_flow.bin")
-        with open(output_file, "wb") as out:
-            scene_flow_gt.astype(np.float32).tofile(out)
+        save_to_binary_file(
+            os.path.join(args.output_directory, "gt_scene_flow.bin"),
+            scene_flow_gt
+        )
 
     if args.store_3dmatch_scene_flow:
-        output_file = os.path.join(args.output_directory, "3dmatch_scene_flow.bin")
-        with open(output_file, "wb") as out:
-            C.astype(np.float32).tofile(out)
+        save_to_binary_file(
+            os.path.join(
+                args.output_directory,
+                "3dmatch_scene_flow_k_%d_thres_%f" %(args.k_neighbors, args.threshold)
+            ),
+            scene_flow_matches
+        )
+
+        save_to_binary_file(
+            os.path.join(
+                args.output_directory,
+                "correspondences_k_%d_thres_%f" %(args.k_neighbors, args.threshold)
+            ),
+            C
+        )
 
 if __name__ == "__main__":
     main(sys.argv[1:])

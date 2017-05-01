@@ -328,3 +328,8 @@ class BatchProvider(object):
 
             # Count the passes
             passes += 1
+
+
+def save_to_binary_file(output_file, data, dtype=np.float32):
+    with open(output_file, "wb") as out:
+        data.astype(dtype).tofile(out)
