@@ -258,15 +258,15 @@ def main(argv):
     scene_flow_matches = c_proj - c_ref
 
     # Read the groundtruth data for the specified frame
-    gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)
+    gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)[:, :2]
     # Take the points for the starting frame 
     points = gt[:, 0] == args.start_frame
     # Filter points according to the limits
     points = filter_data(points, args.xlim, args.ylim, args.zlim)
 
     # Find the points of the reference and the projected point cloud
-    d_ref_gt = gt[points, 2:5]
-    d_proj_gt = gt[points, 5:]
+    d_ref_gt = gt[points, :3]
+    d_proj_gt = gt[points, 3:]
 
     # Compute the scene flow
     scene_flow_gt = d_proj_gt - d_ref_gt
