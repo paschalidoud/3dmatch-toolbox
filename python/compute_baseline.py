@@ -14,6 +14,10 @@ from threedmatch_scene_flow import compute_correspondences, \
                                    compute_projected
 from utils import parse_tdf_grid_from_file, extract_point_from_grid, \
                   save_to_binary_file, filter_data
+from google_cloud_utils import append_to_spreadsheet
+
+
+SPREADSHEET = "1zwaat1QFWDRDVxHtncKBGZPwLBPEMwLPMZXkF-_bCz0"
 
 
 def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
@@ -189,6 +193,16 @@ def main(argv):
         default="-3,2",
         help="The limits of the y-axis"
     )
+    parser.add_argument(
+        "--train_from_scratch",
+        action="store",
+        help="Parameter used when training is performed from scratch"
+    )
+    parser.add_argument(
+        "--credentials",
+        default=os.path.join(os.path.dirname(__file__), ".credentials"),
+        help="The credentials file for the Google API"
+    )
 
     args = parser.parse_args(argv)
     input_shape = (30, 30, 30, 1)
@@ -323,6 +337,18 @@ def main(argv):
             ),
             C
         )
+    # Append results to the spreadsheet
+    append_to_spreadsheet(
+        SPREADSHEET, "Sheet1",
+        [[args.sequence, args.start_frame, args.start_frame+1,
+          "xlim:[" + str(args.xlim[0]) + "," + str(args.xlim[1]) + "], ylim:[" +
+          str(args.ylim[0]) + "," + str(args.ylim[1]) + "], zlim:[" +
+          str(args.zlim[0]) + "," + str(args.zlim[1]) + "]",
+          "train_from_scratch" if args.train_from_scratch else "fine_tune",
+          args.voxel_size, args.k_neighbors, "%f" % mean_diff_norm]],
+        credential_path=args.credentials
+    )
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
