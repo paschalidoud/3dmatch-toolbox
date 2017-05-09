@@ -13,6 +13,6 @@
 /data_parsing/parse_point_clouds
 /data_parsing/export_tdf_from_pointcloud
 /data
-*.pyc
-*.py.swp
-
+python/*.pyc
+python/*.py.swp
+python/.credentials
