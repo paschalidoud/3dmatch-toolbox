@@ -7,7 +7,7 @@ import sys
 
 import numpy as np
 
-from convert_to_ply import parse_bin_data_to_ascii_ply, save_lines, \
+from generate_points_lines import convert_to_ascii_ply, save_lines, \
                            save_mixed_lines, save_points, save_mixed_points
 from utils import filter_data
 
@@ -157,21 +157,21 @@ def main(argv):
     if args.save_as_ply:
         print "Saving data to ply format..."
         # Save all data in ply format
-        parse_bin_data_to_ascii_ply(
+        convert_to_ascii_ply(
             d_ref_gt,
             os.path.join(output_directory, "gt_ref_%d.ply" %(start_frame)),
             args.use_color,
             tuple(args.rgb_reference)
         )
 
-        parse_bin_data_to_ascii_ply(
+        convert_to_ascii_ply(
             d_proj_gt,
             os.path.join(output_directory, "gt_proj_%d.ply" %(start_frame)),
             args.use_color,
             tuple(args.rgb_gt_next)
         )
 
-        parse_bin_data_to_ascii_ply(
+        convert_to_ascii_ply(
             C_proj,
             os.path.join(output_directory, "3dmatch_proj_%d.ply" %(start_frame)),
             args.use_color,

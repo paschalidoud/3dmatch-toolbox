@@ -195,7 +195,7 @@ def main(argv):
     )
     parser.add_argument(
         "--train_from_scratch",
-        action="store",
+        action="store_true",
         help="Parameter used when training is performed from scratch"
     )
     parser.add_argument(
@@ -307,17 +307,26 @@ def main(argv):
     # Start saving stuff
     if args.store_descriptors:
         save_to_binary_file(
-            os.path.join(args.output_directory, "3dmatch_descriptors_ref.bin"),
+            os.path.join(
+                args.output_directory,
+                "x_%d:%d_y_%d:%d_z_%d:%d_3dmatch_descriptors_ref.bin" %(args.xlim[0], args.xlim[1], args.ylim[0], args.ylim[1], args.zlim[0], args.zlim[1])
+            ),
             D_ref
         )
         save_to_binary_file(
-            os.path.join(args.output_directory, "3dmatch_descriptors_proj.bin"),
+            os.path.join(
+                args.output_directory,
+                "x_%d:%d_y_%d:%d_z_%d:%d_3dmatch_descriptors_proj.bin" %(args.xlim[0], args.xlim[1], args.ylim[0], args.ylim[1], args.zlim[0], args.zlim[1])
+            ),
             D_proj
         )
 
     if args.store_gt_scene_flow:
         save_to_binary_file(
-            os.path.join(args.output_directory, "gt_scene_flow.bin"),
+            os.path.join(
+                args.output_directory,
+                "x_%d:%d_y_%d:%d_z_%d:%d_gt_scene_flow.bin" %(args.xlim[0], args.xlim[1], args.ylim[0], args.ylim[1], args.zlim[0], args.zlim[1])
+            ),
             scene_flow_gt
         )
 
@@ -325,7 +334,7 @@ def main(argv):
         save_to_binary_file(
             os.path.join(
                 args.output_directory,
-                "3dmatch_scene_flow_k_%d_thres_%f" %(args.k_neighbors, args.threshold)
+                "x_%d:%d_y_%d:%d_z_%d:%d_3dmatch_scene_flow_k_%d_thres_%f" %(args.xlim[0], args.xlim[1], args.ylim[0], args.ylim[1], args.zlim[0], args.zlim[1], args.k_neighbors, args.threshold)
             ),
             scene_flow_matches
         )
@@ -333,7 +342,7 @@ def main(argv):
         save_to_binary_file(
             os.path.join(
                 args.output_directory,
-                "correspondences_k_%d_thres_%f" %(args.k_neighbors, args.threshold)
+                "x_%d:%d_y_%d:%d_z_%d:%d_correspondences_k_%d_thres_%f" %(args.xlim[0], args.xlim[1], args.ylim[0], args.ylim[1], args.zlim[0], args.zlim[1], args.k_neighbors, args.threshold)
             ),
             C
         )

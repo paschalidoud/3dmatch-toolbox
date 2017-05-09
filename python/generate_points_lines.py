@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-""" Script to convert data from the KITI dataset to the corresponding ply
-format
+""" Script to generate data for visualization purposes
 """
 import os
 
@@ -23,12 +22,7 @@ def create_header_file(f, vertex_size, use_color):
     f.write("end_header\n")
 
 
-def parse_bin_data_to_ascii_ply(
-    P,
-    output_filename,
-    use_color,
-    rgb
-):
+def convert_to_ascii_ply(P, output_filename, use_color, rgb):
     # Write data to the output file
     f = open(output_filename, "wb")
     create_header_file(f, P.shape[0], use_color)
@@ -41,6 +35,9 @@ def parse_bin_data_to_ascii_ply(
         f.write("\n")
 
     f.close()
+
+def generate_lines(P, len1, len2, output_filename, rgb1, rgb2):
+    
 
 def save_lines(P1, P2, output_filename, rgb):
     with open(output_filename, "w") as f:
