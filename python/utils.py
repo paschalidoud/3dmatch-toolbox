@@ -30,23 +30,26 @@ def parse_tdf_grid_from_file(tdf_grid_file):
     return origin, grid
 
 
-def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
+def is_point_inside_voxel_grid(point, grid_shape, tdf_half_shape):
+    return np.all(
+        np.logical_and(
+            point >= tdf_half_shape,  # Make sure that we don't have negative values 
+            point < grid_shape - tdf_half_shape # Make sure that we are inside
+        )
+    )
+
+
+def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims, debug=False):
     # Transform the point to grid indexes
     point = np.round((point - origin) / voxel_size).astype(int)
+    grid_shape = np.array(grid.shape[::-1])
+    tdf_half_shape = np.array(tdf_grid_dims[:-3]) / 2
+    if not is_point_inside_voxel_grid(point, grid_shape, tdf_half_shape):
+        return None
 
     # Extract the a TDF block surrounding the point
-    dims = np.array(tdf_grid_dims[:3]) / 2
-    start = point-dims
-    end = point+dims
-
-    # Check for off by 1 errors
-    under_col = start == -1
-    over_col = end >= np.array(grid.shape)[::-1]
-    start[under_col] += 1
-    end[under_col] += 1
-    start[over_col] -= 1
-    end[over_col] -= 1
-
+    start = point - tdf_half_shape
+    end = point + tdf_half_shape
 
     # NOTE: The data in memory are ordered z, y, x so that x is the fastest
     # changing index
@@ -269,7 +272,7 @@ class BatchProvider(object):
                     return
 
                 # Pick a frame in random
-                frame = np.random.randint(0, len(reference_points))
+                frame = np.random.randint(0, len(reference_points)-1)
 
                 # Load the tdf grids and the point clouds
                 origin_ref, tdf_ref = parse_tdf_grid_from_file(reference_tdfs[frame])
@@ -282,40 +285,50 @@ class BatchProvider(object):
                     projected_points[frame],
                     dtype=np.float32
                 ).reshape(-1, 3)
+                # Load the tdf grid of the next frame
+                origin_next, tdf_next = parse_tdf_grid_from_file(reference_tdfs[frame+1])
 
-                # Pick random points to generate tdf blocks
-                idxs = np.random.randint(
-                    0,
-                    number_of_points[frame],
-                    size=self.batch_size
-                )
-
-                # Do the copy to the cache but make sure you lock first and unlock
-                # afterwards
-                with self.cache_lock:
-                    for i, idx in enumerate(idxs):
+                # Counter for the number of samples inside the batch
+                cnt = 0
+                while cnt < self.batch_size:
+                    # Pick randomly a point to generate the tdf block
+                    idx = np.random.randint(0, number_of_points[frame])
+                    ref_data = extract_point_from_grid(
+                        origin_ref,
+                        tdf_ref,
+                        points_ref[idx],
+                        self.voxel_size,
+                        self.tdf_grid_dims
+                    )
+                    proj_data = extract_point_from_grid(
+                        origin_next,
+                        tdf_next,
+                        points_proj[idx],
+                        self.voxel_size,
+                        self.tdf_grid_dims
+                    )
+                    if proj_data is None:
+                        continue
+                    # Do the copy to the cache but make sure you lock first and unlock
+                    # afterwards
+                    with self.cache_lock:
                         try:
-                            self.reference[batch_idx*self.batch_size + i] = \
-                                extract_point_from_grid(
-                                    origin_ref,
-                                    tdf_ref,
-                                    points_ref[idx],
-                                    self.voxel_size,
-                                    self.tdf_grid_dims
-                                )
-                            self.projected[batch_idx*self.batch_size + i] = \
-                                extract_point_from_grid(
-                                    origin_proj,
-                                    tdf_proj,
-                                    points_proj[idx],
-                                    self.voxel_size,
-                                    self.tdf_grid_dims
-                                )
+                            self.reference[batch_idx*self.batch_size + cnt] = ref_data
+                            self.projected[batch_idx*self.batch_size + cnt] = proj_data
+                            cnt += 1
                         except Exception as e:
                             sys.stderr.write("Exception caught in producer thread\n")
                             sys.stderr.write("Frame: %s\n" % (reference_points[frame],))
                             sys.stderr.write("Point: %d\n" % (idx,))
                             sys.stderr.write(str(e))
+                            f = extract_point_from_grid(
+                                    origin_next,
+                                    tdf_next,
+                                    points_proj[idx],
+                                    self.voxel_size,
+                                    self.tdf_grid_dims,
+                                    debug=True
+                                )
 
                 # Show progress if it is the first pass
                 if passes == 0 and self.verbose > 0:
