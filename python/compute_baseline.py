@@ -12,12 +12,35 @@ import numpy as np
 from threedmatch import create_network
 from threedmatch_scene_flow import compute_correspondences, \
                                    compute_projected
-from utils import parse_tdf_grid_from_file, extract_point_from_grid, \
-                  save_to_binary_file, filter_data
+from utils import parse_tdf_grid_from_file, save_to_binary_file, filter_data
 from google_cloud_utils import append_to_spreadsheet
 
 
 SPREADSHEET = "1zwaat1QFWDRDVxHtncKBGZPwLBPEMwLPMZXkF-_bCz0"
+
+def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
+    # Transform the point to grid indexes
+    point = np.round((point - origin) / voxel_size).astype(int)
+
+    # Extract the a TDF block surrounding the point
+    dims = np.array(tdf_grid_dims[:3]) / 2
+    start = point-dims
+    end = point+dims
+
+    # Check for off by 1 errors
+    under_col = start == -1
+    over_col = end >= np.array(grid.shape)[::-1]
+    start[under_col] += 1
+    end[under_col] += 1
+    start[over_col] -= 1
+    end[over_col] -= 1
+
+
+    # NOTE: The data in memory are ordered z, y, x so that x is the fastest
+    # changing index
+    return np.array(
+        grid[start[2]:end[2], start[1]:end[1], start[0]:end[0]]
+    ).reshape(tdf_grid_dims)
 
 
 def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
@@ -54,7 +77,6 @@ def compute_descriptors(tdf_file, points_file, model, xlim, ylim, zlim, voxel_si
     ).reshape(-1, 3)
 
     points = filter_data(points, xlim, ylim, zlim)
-    print points.shape
 
     D = model.predict_generator(
         generate_tdfs(
@@ -269,6 +291,7 @@ def main(argv):
     c_ref = C[:, :3]
     c_proj = C[:, 3:]
     scene_flow_matches = c_proj - c_ref
+    print scene_flow_matches.shape
 
     # Read the groundtruth data for the specified frame
     gt = np.fromfile(args.groundtruth_file, dtype=np.float32).reshape(-1, 8)
@@ -348,7 +371,7 @@ def main(argv):
         )
     # Append results to the spreadsheet
     append_to_spreadsheet(
-        SPREADSHEET, "Sheet1",
+        SPREADSHEET, "Sheet2",
         [[args.sequence, args.start_frame, args.start_frame+1,
           "xlim:[" + str(args.xlim[0]) + "," + str(args.xlim[1]) + "], ylim:[" +
           str(args.ylim[0]) + "," + str(args.ylim[1]) + "], zlim:[" +

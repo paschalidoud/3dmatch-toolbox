@@ -173,6 +173,7 @@ class BatchProvider(object):
         # Allocate memory for the cached elements
         self.reference = np.empty((N,) + tdf_grid_dims, dtype=np.float32)
         self.projected = np.empty((N,) + tdf_grid_dims, dtype=np.float32)
+        self.y = np.empty((N,), dtype=np.int32)
         self.batch_size = batch_size
         self.batches = batches
         self.voxel_size = voxel_size
@@ -207,21 +208,14 @@ class BatchProvider(object):
 
     def next(self):
         N = self.batches * self.batch_size
-        idxs1 = np.random.randint(0, N, size=self.batch_size)
-        while True:
-            idxs2 = np.random.randint(0, N, size=self.batch_size)
-            if np.all(idxs1 != idxs2):
-                break
-        matching = np.random.randint(0, 2, size=self.batch_size)
-        proj_idxs = np.select([matching == 1, matching == 0], [idxs1, idxs2])
-
+        idxs = np.random.randint(0, N, size=self.batch_size)
         with self.cache_lock:
             return [
                 [
-                    self.reference[idxs1],
-                    self.projected[proj_idxs]
+                    self.reference[idxs],
+                    self.projected[idxs]
                 ],
-                matching.astype(np.float32)
+                self.y[idxs]
             ]
 
     def _producer(self):
@@ -271,7 +265,7 @@ class BatchProvider(object):
                 if self._stop:
                     return
 
-                # Pick a frame in random
+                # Pick a frame in raVndom
                 frame = np.random.randint(0, len(reference_points)-1)
 
                 # Load the tdf grids and the point clouds
@@ -288,8 +282,25 @@ class BatchProvider(object):
                 # Load the tdf grid of the next frame
                 origin_next, tdf_next = parse_tdf_grid_from_file(reference_tdfs[frame+1])
 
+                # Pick a frame in raVndom for the non=marching points
+                while True:
+                    frame2 = np.random.randint(0, len(reference_points)-1)
+                    if frame2 != frame:
+                        break
+
+                # Load the tdf grids and the point clouds
+                origin_ref_2, tdf_ref_2 = parse_tdf_grid_from_file(reference_tdfs[frame2])
+                points_ref_2 = np.fromfile(
+                    reference_points[frame2],
+                    dtype=np.float32
+                ).reshape(-1, 3)
+
                 # Counter for the number of samples inside the batch
                 cnt = 0
+                # Randomly select points that will be matching and non matching
+                # matching = 0, corresponds to non-matching pair
+                # matching = 1, corresponds to matching pair
+                matching = np.random.randint(0, 2, size=self.batch_size)
                 while cnt < self.batch_size:
                     # Pick randomly a point to generate the tdf block
                     idx = np.random.randint(0, number_of_points[frame])
@@ -300,14 +311,25 @@ class BatchProvider(object):
                         self.voxel_size,
                         self.tdf_grid_dims
                     )
-                    proj_data = extract_point_from_grid(
-                        origin_next,
-                        tdf_next,
-                        points_proj[idx],
-                        self.voxel_size,
-                        self.tdf_grid_dims
-                    )
-                    if proj_data is None:
+                    # Generate non-matching pair
+                    if matching[cnt] == 0:
+                        idx2 = np.random.randint(0, number_of_points[frame2])
+                        proj_data = extract_point_from_grid(
+                            origin_ref_2,
+                            tdf_ref_2,
+                            points_ref_2[idx2],
+                            self.voxel_size,
+                            self.tdf_grid_dims
+                        )
+                    else:
+                        proj_data = extract_point_from_grid(
+                            origin_next,
+                            tdf_next,
+                            points_proj[idx],
+                            self.voxel_size,
+                            self.tdf_grid_dims
+                        )
+                    if proj_data is None or ref_data is None:
                         continue
                     # Do the copy to the cache but make sure you lock first and unlock
                     # afterwards
@@ -315,6 +337,7 @@ class BatchProvider(object):
                         try:
                             self.reference[batch_idx*self.batch_size + cnt] = ref_data
                             self.projected[batch_idx*self.batch_size + cnt] = proj_data
+                            self.y[batch_idx*self.batch_size + cnt] = matching[cnt]
                             cnt += 1
                         except Exception as e:
                             sys.stderr.write("Exception caught in producer thread\n")

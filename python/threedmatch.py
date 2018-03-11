@@ -11,7 +11,7 @@ from keras.callbacks import Callback, ModelCheckpoint
 from keras.layers import Activation, Conv3D, MaxPooling3D, Input, \
                          Flatten, Lambda
 from keras.models import Sequential, Model
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 
 import pickle
 
@@ -115,6 +115,9 @@ def matching_distance(y_true, y_pred):
 def non_matching_distance(y_true, y_pred):
     return K.mean((1-y_true) * y_pred) / K.mean(1-y_true)
 
+def debug_distance(y_true, y_pred):
+    return y_pred
+
 
 def create_network(input_shape, weight_file=None, lr=0.001):
     model = Sequential([
@@ -153,11 +156,12 @@ def create_network(input_shape, weight_file=None, lr=0.001):
 
     training_model = Model(inputs=[p1, p2], outputs=distances)
 
-    optimizer = Adam(lr=lr)
+    # optimizer = Adam(lr=lr, clipnorm=1.)
+    optimizer = SGD(lr=lr, momentum=0.99)
     training_model.compile(
         loss=contrastive_loss,
         optimizer=optimizer,
-        metrics=[matching_distance, non_matching_distance, mean_dist]
+        metrics=[matching_distance, non_matching_distance, mean_dist, debug_distance]
         #mode=NanGuardMode(nan_is_error=True, inf_is_error=False, big_is_error=False)
     )
 
