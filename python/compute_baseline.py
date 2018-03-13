@@ -180,6 +180,11 @@ def main(argv):
         default=os.path.join(os.path.dirname(__file__), ".credentials"),
         help="The credentials file for the Google API"
     )
+    parser.add_argument(
+        "--run_in_cluster",
+        action="store_true",
+        help="Specify whether the script is being executed in the cluster"
+    )
 
     args = parser.parse_args(argv)
     input_shape = (30, 30, 30, 1)
@@ -257,7 +262,7 @@ def main(argv):
         mean_normalized_diff_norm if args.normalized else mean_diff_norm
     )
     
-    with open(os.path.join(args.output_directory, "baseline_metrics.txt"), "a") as f:
+    with open(os.path.join(args.output_directory, "%s_statistics.txt" %(args.sequence)), "a") as f:
         f.write("Sequence: %s\n" % args.sequence)
         f.write("k: %f\n" % args.k_neighbors)
         f.write("threshold: %f\n" % args.threshold)
@@ -270,16 +275,17 @@ def main(argv):
         scene_flow_matches
     )
     # Append results to the spreadsheet
-    append_to_spreadsheet(
-        SPREADSHEET, "Sheet5",
-        [[args.sequence, 
-          "train_from_scratch" if args.train_from_scratch else "fine_tune",
-          args.voxel_size,
-          args.k_neighbors,
-          args.threshold,
-          "%f" % mean_diff_norm]],
-        credential_path=args.credentials
-    )
+    if not args.run_in_cluster:
+        append_to_spreadsheet(
+            SPREADSHEET, "Sheet5",
+            [[args.sequence, 
+              "train_from_scratch" if args.train_from_scratch else "fine_tune",
+              args.voxel_size,
+              args.k_neighbors,
+              args.threshold,
+              "%f" % mean_diff_norm]],
+            credential_path=args.credentials
+        )
 
 
 if __name__ == "__main__":
