@@ -36,8 +36,8 @@ def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
 
     # Extract the a TDF block surrounding the point
     dims = np.array(tdf_grid_dims[:3]) / 2
-    start = point-dims
-    end = point+dims
+    start = point - dims
+    end = point + dims
 
     # Check for off by 1 errors
     under_col = start == -1
@@ -47,6 +47,10 @@ def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
     start[over_col] -= 1
     end[over_col] -= 1
 
+    for i in range(3):
+        if start[i] < 0:
+            start[i] = 0
+            end[i] = tdf_grid_dims[i]
 
     # NOTE: The data in memory are ordered z, y, x so that x is the fastest
     # changing index
@@ -107,7 +111,7 @@ def generate_batches(input_directory, batch_size, voxel_size=0.1,
         for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
         if x.endswith("proj.bin")
     ]
-    number_of_points = map(_points_in_file, reference_points)
+    number_of_points = map(_points_in_file, reference_points, dtype_size=4*4)
 
     # Make sure that for every frame there is a reference point cloud and tdf
     # and a projected point cloud and tdf
@@ -224,27 +228,49 @@ class BatchProvider(object):
     def _producer(self):
         # We will be needing the file lists
         input_directory = self.input_directory
+        # reference_tdfs = [
+        #     os.path.join(input_directory, "reference", x)
+        #     for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+        #     if x.endswith(".gz")
+        # ]
+        # projected_tdfs = [
+        #     os.path.join(input_directory, "projected", x)
+        #     for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        #     if x.endswith(".gz")
+        # ]
+        # reference_points = [
+        #     os.path.join(input_directory, "reference", x)
+        #     for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+        #     if x.endswith("ref.bin")
+        # ]
+        # projected_points = [
+        #     os.path.join(input_directory, "projected", x)
+        #     for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+        #     if x.endswith("proj.bin")
+        # ]
+        reference_tdf_path = "velodyne_tdf_voxel_size_%s" %(str(self.voxel_size),)
         reference_tdfs = [
-            os.path.join(input_directory, "reference", x)
-            for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
+            os.path.join(input_directory, reference_tdf_path, x)
+            for x in sorted(os.listdir(os.path.join(input_directory, reference_tdf_path)))
             if x.endswith(".gz")
         ]
+        projected_tdf_path = "velodyne_projected_tdf_voxel_size_%s" %(str(self.voxel_size),)
         projected_tdfs = [
-            os.path.join(input_directory, "projected", x)
-            for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
+            os.path.join(input_directory, projected_tdf_path, x)
+            for x in sorted(os.listdir(os.path.join(input_directory, projected_tdf_path)))
             if x.endswith(".gz")
         ]
         reference_points = [
-            os.path.join(input_directory, "reference", x)
-            for x in sorted(os.listdir(os.path.join(input_directory, "reference")))
-            if x.endswith("ref.bin")
+            os.path.join(input_directory, "velodyne", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "velodyne")))
+            if x.endswith(".bin")
         ]
         projected_points = [
-            os.path.join(input_directory, "projected", x)
-            for x in sorted(os.listdir(os.path.join(input_directory, "projected")))
-            if x.endswith("proj.bin")
+            os.path.join(input_directory, "velodyne_projected", x)
+            for x in sorted(os.listdir(os.path.join(input_directory, "velodyne_projected")))
+             if x.endswith(".bin")
         ]
-        number_of_points = map(_points_in_file, reference_points)
+        #number_of_points = map(_points_in_file, reference_points)
 
         # Make sure that for every frame there is a reference point cloud and tdf
         # and a projected point cloud and tdf
@@ -276,17 +302,18 @@ class BatchProvider(object):
                 points_ref = np.fromfile(
                     reference_points[frame],
                     dtype=np.float32
-                ).reshape(-1, 3)
+                ).reshape(-1, 4)[:, :-1]
                 origin_proj, tdf_proj = parse_tdf_grid_from_file(projected_tdfs[frame])
                 points_proj = np.fromfile(
                     projected_points[frame],
                     dtype=np.float32
-                ).reshape(-1, 3)
+                ).reshape(-1, 4)[:, :-1]
+                number_of_points = points_ref.shape[0]
 
                 # Pick random points to generate tdf blocks
                 idxs = np.random.randint(
                     0,
-                    number_of_points[frame],
+                    number_of_points,
                     size=self.batch_size
                 )
 
