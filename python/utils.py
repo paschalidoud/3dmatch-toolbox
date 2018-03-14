@@ -74,13 +74,14 @@ def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
     start[over_col] -= 1
     end[over_col] -= 1
 
+    gr = grid.shape[::-1]
     for i in range(3):
         if start[i] < 0:
             start[i] = 0
             end[i] = tdf_grid_dims[i]
-        elif end[i] > grid.shape[i]:
-            end[i] = grid.shape[i]
-            start[i] = grid.shape[i] - tdf_grid_dims[i]
+        elif end[i] > gr[i]:
+            end[i] = gr[i]
+            start[i] = gr[i] - tdf_grid_dims[i]
         elif end[i] - start[i] < tdf_grid_dims[i]:
             start[i] = end[i] - tdf_grid_dims[i]
 
