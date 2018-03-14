@@ -13,7 +13,7 @@ from threedmatch import create_network
 from threedmatch_scene_flow import compute_correspondences, \
                                    compute_projected
 from utils import parse_tdf_grid_from_file, extract_point_from_grid, \
-                  save_to_binary_file, filter_data
+                  save_to_binary_file, filter_data, extract_point_from_grid_foo
 from google_cloud_utils import append_to_spreadsheet
 
 
@@ -33,7 +33,10 @@ def generate_tdfs(tdf_file, points, voxel_size, tdf_grid_dims, batch_size):
                         p,
                         voxel_size,
                         tdf_grid_dims
-            ).reshape((1, 30, 30, 30, 1))
+            )
+            
+            #if p_tdf is not None:
+            p_tdf = p_tdf.reshape((1, 30, 30, 30, 1))
 
             # Extract the descriptor for the computed tdf voxel grid
             batch_tdfs = np.vstack((batch_tdfs, p_tdf))

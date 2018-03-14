@@ -30,6 +30,33 @@ def parse_tdf_grid_from_file(tdf_grid_file):
     return origin, grid
 
 
+def extract_point_from_grid_foo(origin, grid, point, voxel_size, tdf_grid_dims):
+    # Transform the point to grid indexes
+    point = np.round((point - origin) / voxel_size).astype(int)
+
+    # Extract the a TDF block surrounding the point
+    dims = np.array(tdf_grid_dims[:3]) / 2
+    start = point - dims
+    end = point + dims
+
+    # Check for off by 1 errors
+    under_col = start == -1
+    over_col = end >= np.array(grid.shape)[::-1]
+    start[under_col] += 1
+    end[under_col] += 1
+    start[over_col] -= 1
+    end[over_col] -= 1
+
+    # NOTE: The data in memory are ordered z, y, x so that x is the fastest
+    # changing index
+    t = np.array(
+        grid[start[2]:end[2], start[1]:end[1], start[0]:end[0]]
+    )
+    if t.shape != (30, 30, 30):
+        return None
+    return t.reshape(tdf_grid_dims)
+
+
 def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
     # Transform the point to grid indexes
     point = np.round((point - origin) / voxel_size).astype(int)
@@ -51,6 +78,11 @@ def extract_point_from_grid(origin, grid, point, voxel_size, tdf_grid_dims):
         if start[i] < 0:
             start[i] = 0
             end[i] = tdf_grid_dims[i]
+        elif end[i] > grid.shape[i]:
+            end[i] = grid.shape[i]
+            start[i] = grid.shape[i] - tdf_grid_dims[i]
+        elif end[i] - start[i] < tdf_grid_dims[i]:
+            start[i] = end[i] - tdf_grid_dims[i]
 
     # NOTE: The data in memory are ordered z, y, x so that x is the fastest
     # changing index
